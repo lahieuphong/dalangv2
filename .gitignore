@@ -1,0 +1,27 @@
+# Logs
+logs
+*.log
+yarn-debug.log*
+yarn-error.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# MediaPipe wasm runtime is copied from node_modules by scripts/setup-mediapipe.mjs
+public/mediapipe/
+
+# The reference screen recording is a working file, not part of the app.
+*.mp4
