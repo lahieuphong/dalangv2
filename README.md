@@ -8,6 +8,11 @@ Raise your hands to the webcam. Each hand holds one puppet, each finger turns
 one joint, and a miniature of the puppet rides on your hand so you can see
 what your fingers are doing.
 
+[**Live demo**](https://dalangv2.hongvan.net) ·
+[How to play](#how-to-play) ·
+[How it works](#how-it-works) ·
+[Deploying](DEPLOY.md)
+
 <img src="docs/screenshots/stage.jpg" width="860" alt="Two Wayang shadow puppets face each other across a low table under a full moon, each hanging from strings that run up to the soft shadow of a hand">
 
 </div>
@@ -294,7 +299,8 @@ src/
   utils/        math, canvas
 tests/          Vitest suites
 scripts/        setup-mediapipe.mjs
-public/         model, favicon (the WASM runtime is copied in at dev / build time)
+public/         model, icons, share image and the server config: web.config (IIS), .htaccess
+                (Apache); the WASM runtime is copied in at dev / build time
 ```
 
 Adding a gesture is one latch in `GestureEngine`. Adding a joint channel is
@@ -310,6 +316,17 @@ narrows rather than cropping the camera to a sliver. On a phone held sideways
 they sit side by side. The stage is 600 units tall and as wide as its panel's
 aspect ratio; every position on it is derived from that width in
 `scene/StageProps.ts`.
+
+## Deployment
+
+DALANG V2 is a static site. `yarn build` writes everything to `dist/`
+(about 42 MB; a visitor downloads about 20 MB of it: one WASM runtime and the
+model). Upload the contents of `dist/` to the web root of any host that
+serves HTTPS.
+
+[DEPLOY.md](DEPLOY.md) (in Vietnamese) has the step-by-step guide for
+`dalangv2.hongvan.net`, including the IIS `web.config`, the Apache `.htaccess`,
+an Nginx example and a post-deploy checklist.
 
 ## Browser support and privacy
 

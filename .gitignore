@@ -25,3 +25,6 @@ public/mediapipe/
 
 # The reference screen recording is a working file, not part of the app.
 *.mp4
+
+# Packaged production upload (see DEPLOY.md)
+release/

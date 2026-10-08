@@ -3,6 +3,7 @@
   "private": true,
   "version": "2.0.0",
   "description": "DALANG V2: an interactive Wayang shadow theatre driven by every finger of both hands.",
+  "homepage": "https://dalangv2.hongvan.net/",
   "type": "module",
   "packageManager": "yarn@1.22.22",
   "scripts": {
