@@ -90,10 +90,17 @@ can be read off the screen. The mapping is a table and can be changed under
 - **Fly hunt.** Flies drift within reach. Swing the paddle through one to
   knock it down; a slow paddle only shoos it away.
 - **Rally.** After five swats (or the `RALLY` button) a ball is served over
-  the low table. Meet it with the paddle.
+  the low table. Meet it with the paddle: hold the paddle in its way and it
+  comes back at a moderate pace, swing through it and it goes where the swing
+  was going, harder for a harder swing. A ball that passes just clear of the
+  paddle still counts (see *Rally assistance* below); a paddle that is nowhere
+  near it never does.
 - **One hand.** With only one hand playing, five flies pick up the other
-  puppet's strings and return the ball. Their aim drifts the longer a rally
-  lasts. Switch this off under Settings → Interaction → Stage partner.
+  puppet's strings and return the ball. They walk to the ball, wind up and
+  swing like anyone else, need a moment to react, and their aim drifts the
+  longer a rally lasts, so they can be beaten. Two hands always play both
+  puppets themselves. Switch the partner off under Settings → Interaction →
+  Stage partner.
 
 The status word comes from a small state machine fed by real conditions:
 `IDLE`, `TRACKING`, `LIFT`, `HUNT`, `RALLY`, `INTERACT` (the pinch holds
@@ -124,7 +131,7 @@ measured reads `–`.
 | Camera      | Start / stop, choose camera, flip front / back, mirror, tracking overlay                               |
 | Tracking    | Finger, palm and pinch sensitivity; smoothing; under *More*: lean and depth sensitivity, detection and tracking thresholds, hold-after-loss |
 | Display     | Hand skeleton, miniature puppets, finger values, status HUD, debug HUD, fullscreen, quality preset     |
-| Interaction | Swap puppet assignment, invert vertical control, stage partner, finger mapping, calibrate / reset, gesture guide |
+| Interaction | Swap puppet assignment, invert vertical control, stage partner, rally assistance, finger mapping, calibrate / reset, gesture guide |
 
 **Sensitivity is not smoothing.** Sensitivity is how far the puppet moves for
 a given movement of the hand (a gain, 0.75× to 1.75×). Smoothing is how firmly
@@ -134,6 +141,20 @@ defaults are already the fast setting.
 **Quality presets** only trade secondary rendering (pixel ratio, soft hand
 shadows, translucent leather, cast shadows, dust). No preset removes a puppet,
 a prop or a finger channel.
+
+**Rally assistance** sets how forgiving the ball game is. It can be changed
+at any moment of play: only the rules of the next contact change, never the
+ball in the air, a puppet or a count.
+
+| Mode                  | A near miss counts out to                    | Aim assist (direction) | Pace assist (speed) | Stage partner              |
+| --------------------- | -------------------------------------------- | ---------------------- | ------------------- | -------------------------- |
+| **Natural** (default) | 1.45× the touching distance (1.65× at most)   | up to 25 %             | 70 %                | reacts in 140 ms, fallible |
+| **Cinematic**         | 1.60× (1.85× at most)                         | up to 40 %             | 85 %                | reacts in 110 ms, steadier |
+| **Precision**         | 1.00×: the ball must really touch the paddle  | none                   | none                | reacts in 170 ms, loosest aim |
+
+The *touching distance* is paddle radius + ball radius: where the two discs
+meet. The collision is swept (continuous) in every mode. These values were
+tuned against the benchmark below; they are a starting point, not a law.
 
 **Calibration** (optional, about ten seconds): show a hand, open it, close it,
 move it around. It fits each finger's 0–100 % to your hand at your camera
@@ -150,7 +171,7 @@ Add these to the URL. They combine.
 | `?script=<name>`                    | One simulated scenario: `thumb` `index` `middle` `ring` `pinky` `pinch` `lift` `fast` `still` `loss` `two` `cross` |
 | `?noise=0.0012`                     | Simulated landmark noise, in frame units (default 0.0012 ≈ a decent webcam)       |
 | `?fps=15`                           | Simulated tracker rate                                                            |
-| `?debug=1`                          | The debug view; also exposes the engine as `window.__dalang`                      |
+| `?debug=1`                          | The debug view and the ball game's overlay on the stage; also exposes the engine as `window.__dalang` |
 | `?tracker=main` / `?tracker=worker` | Pin where the model runs                                                          |
 | `?delegate=cpu`                     | Force the CPU delegate                                                            |
 | `?hud=0`                            | Hide every overlay (clean screenshots)                                            |
@@ -162,6 +183,26 @@ mapping, followers and rendering all run exactly as they do with a camera.
 The debug view plots one finger's **raw curl, filtered curl, joint target and
 rendered joint** on one time axis: any lag from the filter shows between the
 first two lines, any lag from the followers between the last two.
+
+With `?debug=1` the stage also shows the ball game as the physics sees it,
+and the debug view lists its counters:
+
+- **green** the racket (the disc the collider uses, which is the paddle as
+  drawn), **yellow** the core zone (where the ball's centre is when the two
+  touch), **pink** the forgiveness zone, stretched along the paddle's motion
+  by the latency lead;
+- **blue** the ball's predicted flight with marks 100 and 200 ms ahead, the
+  point where it will pass nearest each paddle and in how many ms, and the
+  ball's velocity;
+- per paddle its phase (`READY` `ANTICIPATE` `SWING` `CONTACT` `FOLLOW`
+  `RECOVER`) and how its last attempt ended: `CORE`, `ASSIST` or `MISS`;
+- the last contact where it happened, with its quality and the aim and pace
+  assist it was given; last hit side, hits and duration of the rally;
+- in the panel: rallies, longest and mean length, core and assisted contacts,
+  attempts and misses, mean contact quality, time between contacts, repeat
+  contacts refused, and what the scene costs per frame.
+
+None of it is drawn without the flag.
 
 ## How it works
 
@@ -182,8 +223,58 @@ camera frame ─▶ hand landmarker ─▶ hand assignment ─▶ per-finger fea
 | Mapping     | `motion/PuppetMapping`                         | Response curve × gain; finger → joint by table; palm → root                                         |
 | Motion      | `motion/PuppetController`, `Locomotion`        | Stiff critically damped followers; palm prediction; procedural legs, cloth and follow-through      |
 | States      | `motion/InteractionStateMachine`               | One word per puppet, with dwell times                                                              |
-| Scene       | `scene/SceneController`, `motion/AgentPuppeteer` | Flies, ball, table collisions; the stage's own puppeteer                                         |
+| Scene       | `scene/SceneController`, `BallPhysics`, `RacketCollision`, `RallyAssist`, `motion/AgentPuppeteer` | Flies; the ball in fixed steps, swept against each paddle, sent on by the stroke model; the stage's own puppeteer |
 | Rendering   | `components/*`, `scene/Backdrop`, `StageFx`    | Articulated SVG puppets driven by transforms; canvas for skeleton, strings, flies, ball; a backdrop painted once |
+
+### The ball game
+
+```
+rendered paddle pose (this frame) ─▶ fixed 1/240 s steps of the ball's flight
+   ─▶ swept contact against each paddle ─▶ contact quality ─▶ stroke
+   ─▶ capped aim + pace assist ─▶ new velocity at the moment of contact
+```
+
+- **The collider is the paddle you see.** It is read from the rendered rig
+  of the same frame, after followers and follow-through, so there is nothing
+  between what is drawn and what is hit.
+- **Fixed steps, exact flight.** The ball advances in steps of 1/240 s from
+  an accumulator, each integrated in closed form (gravity + light drag), and
+  is drawn carried forward over the remainder. 30, 60 and 120 frames a second
+  walk through the same states; the prediction runs the very same steps, so a
+  predicted path *is* the path until a paddle touches the ball.
+- **Swept contact.** Each step tests the ball's motion against the paddle's
+  own motion over that step. *Core*: the first instant the two discs touch,
+  found inside the step; the ball flies to that instant, is struck there, and
+  flies the rest of the step. *Forgiveness*: a ball that would pass just
+  clear is struck at its nearest point, where it is, with a lower contact
+  quality. Beyond the ring it is a miss in every mode. The ball is never
+  moved to the paddle and the paddle is never moved to the ball.
+- **Forgiveness adapts within a ceiling.** The ring grows a little for a fast
+  exchange and after consecutive misses, and reaches a few frames ahead along
+  a paddle that is closing on the ball (the drawn paddle trails the hand). It
+  is capped per mode, and a paddle being drawn back gets none.
+- **The stroke.** Direction = a gentle arc toward the far side (what a paddle
+  held still does) + where the ball met the disc + the paddle's own velocity.
+  Speed = the rebound + a share of the swing, softly limited. A swing away
+  from the table really does send the ball away from the table.
+- **Assistance is a nudge, not a takeover.** Of all the arcs that would land
+  on the far half, the one nearest the stroke's own line is the *safe return*
+  (a lob stays a lob, a drive a drive). The direction is blended toward it by
+  at most the mode's aim-assist ceiling: about half of it for a clean,
+  deliberate hit, all of it for a rescued contact or a paddle merely held in
+  the way. The pace is drawn toward the one that lands. A stroke aimed
+  somewhere else entirely gets neither.
+- **One stroke, one hit.** After a contact the same paddle cannot be credited
+  again within 220 ms, nor until the ball has come back off something, the
+  other paddle has played it, or (for a ball popped up) 650 ms have passed. A
+  hand outruns the ball, and the paddle overtaking its own shot must not hit
+  it twice.
+- **The partner plays by the same rules.** The stage agent only produces a
+  pose target, through the same followers, the same collision and the same
+  stroke. It reads the ball's predicted flight, needs a reaction time, walks
+  with a speed and an acceleration limit, winds up, swings through, recovers,
+  aims a little off (more as a rally goes on), and never takes a serve meant
+  for the player or a puppet that a hand is holding.
 
 ### What makes it responsive
 
@@ -242,7 +333,7 @@ the test, not something a page can change. Tracking followed every frame it
 got: 14.9 Hz, 13.8 ms inference, 25 ms capture → pose, 60.0 fps render. The
 app showed its slow-camera notice.
 
-**Pipeline, simulated landmarks (66 automated tests)**
+**Pipeline, simulated landmarks (79 automated tests)**
 
 | What                                                         | Result                                              |
 | ------------------------------------------------------------ | --------------------------------------------------- |
@@ -256,7 +347,75 @@ app showed its slow-camera notice.
 | Steady lift at 30 results/s: unevenness of rendered speed    | 0.05                                                |
 | … at 15 results/s, with / without the sparse-tracking easing | 0.16, no stalled frames / 0.72, 26 % of frames stalled |
 
+**Ball game, deterministic benchmark** (`yarn bench:rally`; same scenarios,
+seeds and frame pacing for the original collision code and for each mode; raw
+numbers in `docs/benchmarks/`)
+
+*Fly-by*: 6000 balls fired past a paddle (still, or sweeping at up to 1200
+units/s), judged against the true closest approach. 1× is the touching
+distance.
+
+| Closest approach     | Original                                 | Precision | Natural | Cinematic |
+| -------------------- | ---------------------------------------- | --------- | ------- | --------- |
+| up to 1× (touching)  | 100 %                                    | 100 %     | 100 %   | 100 %     |
+| 1–1.3×               | 86.5–90.9 %, depending on the frame rate | 0 %       | 87.9 %  | 87.9 %    |
+| 1.3–1.45×            | 0–14.7 %, depending on the frame rate    | 0 %       | 89.4 %  | 89.4 %    |
+| 1.45–1.8×            | 0–2.4 %                                  | 0 %       | 22.9 %  | 56.7 %    |
+| beyond 2×            | 0                                        | 0         | 0       | 0         |
+| Furthest hit         | 1.28× at 120 fps, 1.42× at 60, 1.71× at 30 | 1.00×   | 1.78×   | 1.92×     |
+| Same at 30 / 60 / 120 fps | no                                  | yes       | yes     | yes       |
+
+The near passes that are still missed in Natural and Cinematic are behind a
+paddle that is being drawn back.
+
+*Serve drill*: 600 identical serves per simulated player, with the same
+aiming error for serve *n* in every version; each attempt is also replayed
+with nothing to hit, to know how close it truly came.
+
+| Simulated player | Hit rate: original → Precision / Natural / Cinematic | Near misses (1–1.6×) rescued: original → Natural / Cinematic | Hits that cross the net: original → Natural / Cinematic |
+| ---------------- | ---------------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------- |
+| steady           | 100 % → 100 / 100 / 100 %                             | none occurred                                                 | 89.3 % → 98.7 / 98.7 %                                   |
+| average          | 99.3 % → 98.3 / 100 / 100 %                           | 4 of 8 → 10 of 10 / 10 of 10                                  | 92.1 % → 94.8 / 96.3 %                                   |
+| sloppy           | 91.5 % → 88.2 / 95.3 / 96.3 %                         | 43.8 % of 48 → 91.5 % / 100 % of 47                           | 90.7 % → 93.5 / 95.7 %                                   |
+| novice           | 85.2 % → 80.7 / 87.8 / 89.7 %                         | 50.8 % of 61 → 76.4 % / 90.9 % of 55                          | 88.1 % → 94.7 / 96.8 %                                   |
+
+No attempt that truly passed more than two touching distances away was a hit
+in any version (false positives: 0). Precision hits less often than the
+original because its hit zone is the paddle's real size; the original's was
+1.26× that.
+
+*Rally*: a simulated player against the stage agent, 6 seeds × 300 s each,
+60 fps. Paddle contacts per rally, longest rally in brackets.
+
+| Simulated player | Original  | Precision | Natural   | Cinematic  |
+| ---------------- | --------- | --------- | --------- | ---------- |
+| steady           | 1.94 (8)  | 6.87 (22) | 36.3 (84) | 61.5 (170) |
+| average          | 2.25 (8)  | 5.16 (20) | 25.1 (92) | 42.9 (160) |
+| sloppy           | 2.09 (7)  | 3.36 (20) | 8.5 (32)  | 13.1 (46)  |
+| novice           | 1.70 (6)  | 2.54 (14) | 5.0 (25)  | 6.3 (29)   |
+| nobody there     | 0         | 0         | 0         | 0          |
+
+- In the original, 54–75 % of rallies ended because the agent's own return
+  failed to cross the net. Now a rally usually ends with a miss.
+- Natural, average player, by frame pacing: 25.3 at 30 fps, 25.1 at 60, 24.7
+  at 120, 20.9 with frame times varying ±35 %, 23.3 with a 15 Hz camera
+  (original: 2.98 / 2.25 / 2.09 / 2.14 / 2.16).
+- The same paddle credited twice within 150 ms: 0 in every row, before and
+  after.
+- Cost of one scene update, measured in Node: about 2 µs before, 7–10 µs
+  after at 60 fps (12–13 µs at 30 fps, where a frame holds eight steps). In
+  the browser the scene took 0.02–0.07 ms of a 16.7 ms frame.
+
+The simulated player is a stand-in with fixed habits: it aims a little off,
+takes time to get there and swings gently. It is good for comparing versions
+on identical input; it does not say what a rally with real hands is like.
+
 **Not measured, and why**
+
+- The rally assistance with real hands. Everything above was measured with
+  simulated paddles. How the forgiveness ring, the latency lead and the
+  follow-through protection feel with a tracked hand, at real swing speeds and
+  with a real camera's delay, has to be tried by a person.
 
 - A real hand in front of a physical webcam. The automated runs had no hand
   to show the camera; the recorded clip is a screen recording with overlays
@@ -279,6 +438,15 @@ yarn test
 - `tests/tracking.test.ts`: assignment (crossing hands, mislabelled frames, drop-outs, duplicates, swap), the filter (rest, step, ramp), spike guard, calibration.
 - `tests/pipeline.test.ts`: the acceptance scenarios on the real engine, headlessly: one finger at a time, two hands, crossing, pinch, fast movement, still hand, loss and recovery, sparse tracking, lift.
 - `tests/scene.test.ts`: state machine, gestures, fly hunt, rally physics, catch and serve, the stage agent.
+- `tests/rally.test.ts`: the ball game. Core hit, forgiveness hit, outside miss, fast ball, moving racket, no double hit, valid return, assist limit, two human hands, frame independence (30 / 60 / 120 fps and uneven frames), a whole simulated rally, misses that must stay misses, and switching the assistance mode in mid-rally.
+
+```bash
+yarn bench:rally                      # fly-by, serve drill and rally scenarios → docs/benchmarks/rally-latest.{json,txt}
+node bench/summary.mjs docs/benchmarks/rally-baseline.json docs/benchmarks/rally-latest.json
+```
+
+`rally-baseline` is the same harness run on the collision code as it was
+before the rally assistance (commit `61e13a6`).
 
 ## Project structure
 
@@ -290,7 +458,9 @@ src/
   motion/       PuppetRig (dimensions, forward kinematics, SVG transforms), PuppetMapping,
                 PuppetController, MotionFollowers, Locomotion, GestureEngine,
                 InteractionStateMachine, AgentPuppeteer
-  scene/        StageProps (layout), SceneController, Backdrop, StageFx, HandSilhouette, AmbientEffects
+  scene/        StageProps (layout), SceneController, BallPhysics (flight, prediction), RacketCollision
+                (swept contact, zones, quality), RallyAssist (modes, stroke, aim and pace assist),
+                Backdrop, StageFx, HandSilhouette, AmbientEffects
   audio/        StageAudio (generated gamelan ambience and stage cues; no audio files)
   components/   Header, CameraView, HandOverlay, MiniaturePuppet, TheaterStage, PuppetRig,
                 StatusHUD, FingerMonitor, DebugHUD, Settings, Calibration
@@ -298,6 +468,7 @@ src/
   styles/       app.css
   utils/        math, canvas
 tests/          Vitest suites
+bench/          The deterministic rally benchmark (harness, runner, summary)
 scripts/        setup-mediapipe.mjs
 public/         model, icons, share image and the server config: web.config (IIS), .htaccess
                 (Apache); the WASM runtime is copied in at dev / build time

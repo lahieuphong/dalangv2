@@ -1,0 +1,31 @@
+FLY-BY: hit rate by true miss distance (1× = ball and paddle disc just touch)
+baseline    60 fps       ≤1×: 100.0% of 2326   ≤1.3×: 89.6% of 728   ≤1.45×: 6.2% of 340   ≤1.8×: 0.0% of 792   ≤2.6×: 0.0% of 1814
+                          closing > 600 u/s: ≤1×: 100.0% of 1173   ≤1.3×: 92.4% of 381   ≤1.45×: 9.0% of 167   ≤1.8×: 0.0% of 382   ≤2.6×: 0.0% of 880
+                          false positives (hit beyond 2×): 0   furthest hit: 1.42×
+baseline    30 fps       ≤1×: 100.0% of 2326   ≤1.3×: 90.0% of 728   ≤1.45×: 14.7% of 340   ≤1.8×: 2.4% of 792   ≤2.6×: 0.0% of 1814
+                          closing > 600 u/s: ≤1×: 100.0% of 1173   ≤1.3×: 92.4% of 381   ≤1.45×: 18.6% of 167   ≤1.8×: 3.7% of 382   ≤2.6×: 0.0% of 880
+                          false positives (hit beyond 2×): 0   furthest hit: 1.71×
+baseline   120 fps       ≤1×: 100.0% of 2326   ≤1.3×: 86.5% of 728   ≤1.45×: 0.0% of 340   ≤1.8×: 0.0% of 792   ≤2.6×: 0.0% of 1814
+                          closing > 600 u/s: ≤1×: 100.0% of 1173   ≤1.3×: 89.0% of 381   ≤1.45×: 0.0% of 167   ≤1.8×: 0.0% of 382   ≤2.6×: 0.0% of 880
+                          false positives (hit beyond 2×): 0   furthest hit: 1.28×
+baseline    60 fps ±35%  ≤1×: 100.0% of 2343   ≤1.3×: 90.9% of 706   ≤1.45×: 10.2% of 324   ≤1.8×: 0.1% of 828   ≤2.6×: 0.0% of 1799
+                          closing > 600 u/s: ≤1×: 100.0% of 1146   ≤1.3×: 91.3% of 333   ≤1.45×: 14.3% of 154   ≤1.8×: 0.0% of 402   ≤2.6×: 0.0% of 880
+                          false positives (hit beyond 2×): 0   furthest hit: 1.50×
+
+SERVE DRILL: 600 identical serves per player, each with the same aiming error in every version
+  hit rate by how close the attempt truly came (in touching distances), and how many of the hits crossed the net
+baseline · steady      hit 100.0%   ≤1×: 100.0% of 600   ≤1.3×: – of 0   ≤1.6×: – of 0   ≤2×: – of 0   beyond: – of 0   returned over the net  89.3%
+baseline · average     hit  99.3%   ≤1×: 100.0% of 592   ≤1.3×: 100.0% of 4   ≤1.6×: 0.0% of 4   ≤2×: – of 0   beyond: – of 0   returned over the net  92.1%
+baseline · sloppy      hit  91.5%   ≤1×: 100.0% of 528   ≤1.3×: 87.5% of 24   ≤1.6×: 0.0% of 24   ≤2×: 0.0% of 17   beyond: 0.0% of 7   returned over the net  90.7%
+baseline · novice      hit  85.2%   ≤1×: 100.0% of 480   ≤1.3×: 88.6% of 35   ≤1.6×: 0.0% of 26   ≤2×: 0.0% of 31   beyond: 0.0% of 28   returned over the net  88.1%
+
+RALLY: simulated player (left) against the stage agent (right), 6 seeds × 300 s
+baseline · steady · 60 fps         rallies  415  hits/rally  1.94  longest   8  player  98.7% of  460  near-miss   0.0%  serve 100.0% (near-miss   0.0%)  over net  77.8%  cpu 100.0% of  354  double 0  ended by: player miss 6 / player fault 100 / cpu miss 0 / cpu fault 309  2.0 µs
+baseline · average · 60 fps        rallies  390  hits/rally  2.25  longest   8  player  97.2% of  492  near-miss   1.4%  serve  99.7% (near-miss   0.0%)  over net  76.4%  cpu  98.4% of  367  double 0  ended by: player miss 14 / player fault 79 / cpu miss 6 / cpu fault 291  2.1 µs
+baseline · sloppy · 60 fps         rallies  383  hits/rally  2.09  longest   7  player  88.1% of  494  near-miss   4.3%  serve  92.5% (near-miss   3.1%)  over net  73.1%  cpu  99.1% of  318  double 0  ended by: player miss 59 / player fault 69 / cpu miss 3 / cpu fault 252  2.3 µs
+baseline · novice · 60 fps         rallies  388  hits/rally  1.70  longest   6  player  78.4% of  476  near-miss   7.8%  serve  82.3% (near-miss   7.7%)  over net  73.5%  cpu  98.9% of  273  double 0  ended by: player miss 103 / player fault 74 / cpu miss 3 / cpu fault 208  2.1 µs
+baseline · absent · 60 fps         rallies  426  hits/rally  0.00  longest   0  player   0.0% of  426  near-miss   0.0%  serve   0.0% (near-miss   0.0%)  over net      –  cpu      – of    0  double 0  ended by: player miss 426 / player fault 0 / cpu miss 0 / cpu fault 0  2.2 µs
+baseline · average · 30 fps        rallies  384  hits/rally  2.98  longest   9  player  96.4% of  497  near-miss   1.4%  serve 100.0% (near-miss   0.0%)  over net  64.1%  cpu  98.4% of  311  double 0  ended by: player miss 18 / player fault 135 / cpu miss 5 / cpu fault 226  2.4 µs
+baseline · average · 120 fps       rallies  396  hits/rally  2.09  longest   8  player  97.9% of  466  near-miss   1.1%  serve  99.0% (near-miss   0.5%)  over net  76.8%  cpu  98.3% of  350  double 0  ended by: player miss 10 / player fault 80 / cpu miss 6 / cpu fault 300  1.8 µs
+baseline · average · 60 fps ±35%   rallies  394  hits/rally  2.14  longest   9  player  97.5% of  480  near-miss   1.5%  serve  99.0% (near-miss   0.8%)  over net  72.6%  cpu  99.7% of  339  double 0  ended by: player miss 12 / player fault 96 / cpu miss 1 / cpu fault 285  2.3 µs
+baseline · average · 60 fps, 15 Hz camera rallies  396  hits/rally  2.16  longest   7  player  96.9% of  489  near-miss   0.4%  serve  99.7% (near-miss   0.0%)  over net  73.6%  cpu  99.1% of  349  double 0  ended by: player miss 15 / player fault 96 / cpu miss 3 / cpu fault 282  2.1 µs

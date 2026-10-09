@@ -172,6 +172,7 @@ export class Engine {
       agentSide: null,
       scene: this.scene,
       reducedMotion: false,
+      debug: flags.debug,
     };
     this.cameraFrame = {
       now: 0,
@@ -195,6 +196,9 @@ export class Engine {
     this.quality = QUALITY[settings.quality];
     this.assigner.swapped = settings.swapHands;
     setTrackerThresholds({ detection: settings.detectionConfidence, presence: settings.trackingConfidence, tracking: settings.trackingConfidence });
+    // Only the rules of the next contact change: the ball in the air, the puppets and every count carry on.
+    this.scene.setAssist(settings.rallyAssist);
+    this.agent.setAssist(settings.rallyAssist);
     this.reconfigure();
     const t = this.telemetry;
     t.fingerGain = this.env.gains.finger;
@@ -314,7 +318,11 @@ export class Engine {
 
     // 5. The scene reads the paddles; it never moves a puppet.
     for (const side of SIDES) this.updatePaddle(side, tracking[side], dt);
+    const sceneStarted = performance.now();
     scene.update(now, dt, layout, this.paddles, agentSide, agentSide ? this.placeCarriers(agentSide) : null);
+    this.telemetry.sceneMs = average(this.telemetry.sceneMs || 0, performance.now() - sceneStarted);
+    // A stroke that landed shows in the puppet that made it. The paddle is where it was; only the rest of the figure answers.
+    if (!input.reducedMotion) for (const contact of scene.contacts) this.puppets[contact.side].recoil(contact.power);
     if (this.audio && this.soundOn) for (const cue of scene.cues) this.audio.cue(cue.kind, cue.pan, cue.strength);
     scene.cues.length = 0;
 
@@ -622,6 +630,9 @@ export class Engine {
     t.rallySeconds = scene.rallySeconds;
     t.bestRally = scene.bestRally;
     t.agentSide = this.agentSide;
+    t.rallyAssist = scene.assist.mode;
+    t.rally = scene.stats;
+    t.lastContact = scene.lastContact;
     t.events = scene.events;
   }
 
@@ -674,6 +685,7 @@ export class Engine {
       frameMs: t.frameMs,
       worstFrameMs: t.worstFrameMs,
       engineMs: t.engineMs,
+      sceneMs: t.sceneMs,
       mappingMs: t.mappingMs,
       trackHz: t.trackHz,
       cameraFps: t.cameraFps,
@@ -688,6 +700,14 @@ export class Engine {
       mode: t.mode,
       returns: t.returns,
       agentSide: t.agentSide,
+      rally: {
+        assist: this.scene.assist.mode,
+        hits: this.scene.rallyHits,
+        seconds: this.scene.rallySeconds,
+        ...this.scene.stats,
+        lastContact: this.scene.lastContact ? { ...this.scene.lastContact } : null,
+        lastOutcome: { ...this.scene.lastOutcome },
+      },
       stageWidth: this.layout.width,
       left: hand('left'),
       right: hand('right'),

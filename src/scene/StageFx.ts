@@ -1,7 +1,7 @@
 import type { StageFrame } from '../app/frames';
 import { CHANNEL_STRING_JOINT, facing } from '../motion/PuppetRig';
 import { FINGERTIPS, LANDMARK, LANDMARK_COUNT, palmCenter } from '../tracking/FingerGeometry';
-import { FINGER_NAMES, JOINT_CHANNELS, type Side } from '../types';
+import { FINGER_NAMES, JOINT_CHANNELS, SIDES, type Side } from '../types';
 import { clamp } from '../utils/math';
 import { BALL_RADIUS, CARRIERS, type Ball, type Fly, type Impact } from './SceneController';
 
@@ -171,15 +171,16 @@ function drawBall(ctx: CanvasRenderingContext2D, ball: Ball, k: number, now: num
     }
   }
 
+  // Drawn where the ball is at this display frame: the physics state carried over the part of a step still owed.
   ctx.globalAlpha = alpha;
   ctx.fillStyle = '#150e07';
   ctx.beginPath();
-  ctx.arc(ball.x * k, ball.y * k, r, 0, Math.PI * 2);
+  ctx.arc(ball.renderX * k, ball.renderY * k, r, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = 'rgba(236, 206, 140, 0.55)';
   ctx.lineWidth = Math.max(0.8, 0.9 * k);
   ctx.beginPath();
-  ctx.arc(ball.x * k, ball.y * k, r * 0.62, ball.angle - 2.4, ball.angle - 1.2);
+  ctx.arc(ball.renderX * k, ball.renderY * k, r * 0.62, ball.angle - 2.4, ball.angle - 1.2);
   ctx.stroke();
   ctx.globalAlpha = 1;
 }
@@ -211,6 +212,182 @@ function drawImpacts(ctx: CanvasRenderingContext2D, impacts: readonly Impact[], 
   }
 }
 
+/* ------------------------------------------------------------------ ?debug=1 */
+
+const DEBUG = {
+  racket: 'rgba(62, 240, 194, 0.95)',
+  core: 'rgba(255, 214, 74, 0.95)',
+  forgiveness: 'rgba(255, 110, 196, 0.9)',
+  path: 'rgba(120, 200, 255, 0.9)',
+  miss: 'rgba(255, 96, 80, 0.95)',
+  text: 'rgba(255, 255, 255, 0.96)',
+  plate: 'rgba(12, 8, 4, 0.72)',
+} as const;
+/** How long the last contact stays marked on the stage, ms. */
+const CONTACT_MARK_MS = 1600;
+
+/** A line of small text on a dark plate, so it reads against the lit screen. */
+function debugLabel(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, size: number, color: string = DEBUG.text) {
+  const width = ctx.measureText(text).width;
+  ctx.fillStyle = DEBUG.plate;
+  ctx.fillRect(x - 3, y - size * 0.72, width + 6, size * 1.44);
+  ctx.fillStyle = color;
+  ctx.fillText(text, x, y);
+}
+
+/**
+ * The ball game as the physics sees it, drawn over the stage:
+ *
+ *   green   the racket: the disc the collider uses, which is the paddle as drawn
+ *   yellow  core zone: where the ball's centre is when ball and racket touch
+ *   pink    forgiveness zone, stretched along the racket's motion by the latency lead
+ *   blue    the ball's predicted flight (ticks 100 and 200 ms ahead), its velocity,
+ *           and the point where it will pass nearest each racket
+ *
+ * with the outcome of each racket's last attempt (CORE, ASSIST or MISS) and
+ * the quality and the assist weights (aim, pace) of the last contact.
+ */
+function drawRallyDebug(ctx: CanvasRenderingContext2D, frame: StageFrame, k: number) {
+  const { scene, now } = frame;
+  const ball = scene.ball;
+  const size = Math.max(9, 10 * k);
+  const line = Math.max(1, 1.2 * k);
+  ctx.save();
+  ctx.font = `${size.toFixed(1)}px ui-monospace, Menlo, Consolas, monospace`;
+  ctx.textBaseline = 'middle';
+  ctx.lineCap = 'round';
+  ctx.lineWidth = line;
+
+  // The predicted flight: the very steps the live ball will take.
+  const forecast = scene.forecast;
+  if (ball.state === 'live' && forecast.valid) {
+    ctx.strokeStyle = DEBUG.path;
+    ctx.setLineDash([2 * k, 5 * k]);
+    ctx.beginPath();
+    ctx.moveTo(ball.renderX * k, ball.renderY * k);
+    for (let i = 0; i < forecast.count; i++) {
+      const sample = forecast.samples[i];
+      if (sample.t - forecast.age > 0) ctx.lineTo(sample.x * k, sample.y * k);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Where it will be in 100 and 200 ms.
+    for (const ahead of [0.1, 0.2]) {
+      let nearest = -1;
+      for (let i = 0; i < forecast.count && nearest < 0; i++) if (forecast.samples[i].t - forecast.age >= ahead) nearest = i;
+      if (nearest < 0) continue;
+      const sample = forecast.samples[nearest];
+      ctx.beginPath();
+      ctx.arc(sample.x * k, sample.y * k, 3.2 * k, 0, Math.PI * 2);
+      ctx.stroke();
+      debugLabel(ctx, `${ahead * 1000}`, sample.x * k + 6 * k, sample.y * k - 8 * k, size, DEBUG.path);
+    }
+    // Velocity: an arrow a tenth of a second long, and the speed.
+    const tipX = (ball.renderX + ball.vx * 0.1) * k;
+    const tipY = (ball.renderY + ball.vy * 0.1) * k;
+    ctx.strokeStyle = DEBUG.text;
+    ctx.beginPath();
+    ctx.moveTo(ball.renderX * k, ball.renderY * k);
+    ctx.lineTo(tipX, tipY);
+    ctx.stroke();
+    debugLabel(ctx, `${Math.round(Math.hypot(ball.vx, ball.vy))} u/s`, tipX + 5 * k, tipY, size);
+  }
+
+  for (const side of SIDES) {
+    const zones = scene.zones[side];
+    if (frame.presence[side] < 0.05 || zones.core <= 0) continue;
+    const joints = frame.joints[side];
+    const x = joints.paddle.x * k;
+    const y = joints.paddle.y * k;
+
+    ctx.strokeStyle = DEBUG.racket;
+    ctx.beginPath();
+    ctx.arc(x, y, joints.paddleRadius * k, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.setLineDash([5 * k, 4 * k]);
+    ctx.strokeStyle = DEBUG.core;
+    ctx.beginPath();
+    ctx.arc(x, y, zones.core * k, 0, Math.PI * 2);
+    ctx.stroke();
+
+    if (zones.forgiveness > zones.core) {
+      // A capsule: the ring around the racket, and around every point of the stretch it is about to sweep.
+      const lead = Math.hypot(zones.leadX, zones.leadY);
+      const heading = lead > 0.01 ? Math.atan2(zones.leadY, zones.leadX) : 0;
+      const reach = zones.forgiveness * k;
+      ctx.strokeStyle = DEBUG.forgiveness;
+      ctx.beginPath();
+      if (lead > 0.01) {
+        ctx.arc(x, y, reach, heading + Math.PI / 2, heading - Math.PI / 2);
+        ctx.arc(x + zones.leadX * k, y + zones.leadY * k, reach, heading - Math.PI / 2, heading + Math.PI / 2);
+        ctx.closePath();
+      } else ctx.arc(x, y, reach, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+
+    // Where the ball will pass nearest this racket if it stays where it is.
+    const arrival = scene.arrival[side];
+    if (arrival.valid) {
+      const ax = arrival.x * k;
+      const ay = arrival.y * k;
+      const arm = 6 * k;
+      ctx.strokeStyle = DEBUG.path;
+      ctx.beginPath();
+      ctx.moveTo(ax - arm, ay);
+      ctx.lineTo(ax + arm, ay);
+      ctx.moveTo(ax, ay - arm);
+      ctx.lineTo(ax, ay + arm);
+      ctx.stroke();
+      debugLabel(ctx, `${Math.round(arrival.t * 1000)} ms`, ax + arm + 3 * k, ay + 9 * k, size, DEBUG.path);
+    }
+
+    const outcome = scene.lastOutcome[side];
+    debugLabel(ctx, `${scene.phase[side]} · ${outcome ?? '–'}`, x - zones.core * k, y + (zones.forgiveness + 11) * k, size, outcome === 'MISS' ? DEBUG.miss : DEBUG.text);
+  }
+
+  // The last valid contact: where it happened, and what kind it was.
+  const last = scene.lastContact;
+  if (last && now - last.at < CONTACT_MARK_MS) {
+    const color = last.kind === 'CORE' ? DEBUG.core : DEBUG.forgiveness;
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.arc(last.x * k, last.y * k, BALL_RADIUS * k, 0, Math.PI * 2);
+    ctx.stroke();
+    debugLabel(ctx, `${last.kind} q ${last.quality.toFixed(2)} · aim ${last.weight.toFixed(2)} · pace ${last.pace.toFixed(2)}`, last.x * k + 10 * k, last.y * k - 12 * k, size, color);
+  }
+
+  // The ball again, as an outline on top, so no label can hide it.
+  if (ball.state === 'live') {
+    ctx.strokeStyle = DEBUG.text;
+    ctx.beginPath();
+    ctx.arc(ball.renderX * k, ball.renderY * k, BALL_RADIUS * k, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // The rally in two lines.
+  const stats = scene.stats;
+  const left = 10 * k;
+  let top = 14 * k;
+  debugLabel(
+    ctx,
+    `RALLY ASSIST ${scene.assist.mode.toUpperCase()} · hits ${scene.rallyHits} · ${scene.rallySeconds.toFixed(1)} s · last side ${last ? last.side.toUpperCase() : '–'}`,
+    left,
+    top,
+    size,
+  );
+  top += size * 1.6;
+  debugLabel(
+    ctx,
+    `rallies ${stats.rallies} · longest ${stats.longest} · core ${stats.coreContacts} · assisted ${stats.assistedContacts} · missed ${stats.misses}/${stats.attempts}`,
+    left,
+    top,
+    size,
+  );
+  ctx.restore();
+}
+
 /** Draws everything that sits in front of the puppets. The canvas must already be cleared. */
 export function drawStageFront(ctx: CanvasRenderingContext2D, frame: StageFrame, k: number, shadows: Record<Side, ShadowHand>) {
   const { scene, layout } = frame;
@@ -219,4 +396,5 @@ export function drawStageFront(ctx: CanvasRenderingContext2D, frame: StageFrame,
   for (const fly of scene.flies) drawFly(ctx, fly, k, flyScale);
   drawBall(ctx, scene.ball, k, frame.now);
   drawImpacts(ctx, scene.impacts, k, frame.now);
+  if (frame.debug) drawRallyDebug(ctx, frame, k);
 }

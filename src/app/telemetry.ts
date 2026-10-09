@@ -1,4 +1,5 @@
-import type { BallState, SceneEvent, SceneMode } from '../scene/SceneController';
+import type { RallyAssistMode } from '../scene/RallyAssist';
+import { emptyRallyStats, type BallState, type RallyContact, type RallyStats, type SceneEvent, type SceneMode } from '../scene/SceneController';
 import {
   FINGER_NAMES,
   type FingerName,
@@ -100,6 +101,8 @@ export interface Telemetry {
   worstFrameMs: number;
   /** Time the engine spends per render frame (everything but the browser's own painting). */
   engineMs: number;
+  /** The share of that spent on the scene: ball physics, swept contacts, flies. */
+  sceneMs: number;
   /** Camera capture → pose on screen: input age plus how far the followers trail. */
   responseMs: number;
 
@@ -116,6 +119,12 @@ export interface Telemetry {
   rallySeconds: number;
   bestRally: number;
   agentSide: Side | null;
+  /** The rally-assistance preset in force. */
+  rallyAssist: RallyAssistMode;
+  /** The ball game's counters: the scene's own object, counted from real contacts and misses. */
+  rally: RallyStats;
+  /** The latest valid paddle contact; null before the first. */
+  lastContact: RallyContact | null;
 
   /** 0..1: how lively the primary hand has been over the last second. */
   energy: number;
@@ -180,6 +189,7 @@ export const createTelemetry = (): Telemetry => ({
   frameMs: NaN,
   worstFrameMs: NaN,
   engineMs: NaN,
+  sceneMs: NaN,
   responseMs: NaN,
   primary: null,
   hands: { left: emptyHand(), right: emptyHand() },
@@ -190,6 +200,9 @@ export const createTelemetry = (): Telemetry => ({
   rallySeconds: 0,
   bestRally: 0,
   agentSide: null,
+  rallyAssist: 'natural',
+  rally: emptyRallyStats(),
+  lastContact: null,
   energy: 0,
   motion: new Float32Array(MOTION_SAMPLES),
   motionHead: 0,

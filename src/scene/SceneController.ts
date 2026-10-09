@@ -1,6 +1,22 @@
 import { SIDES, type Point, type Side } from '../types';
 import { clamp, lerp, mulberry32 } from '../utils/math';
+import { BALL_RADIUS, emptySample, fly, GRAVITY, PHYSICS_STEP, predictFlight, stepBall, type BallBody, type BallContact, type BallSample } from './BallPhysics';
+import { contactQuality, emptyContact, sweepContact, type ContactKind, type ContactZones } from './RacketCollision';
+import {
+  buildZones,
+  DEFAULT_RALLY_ASSIST,
+  emptyStroke,
+  MAX_BALL_SPEED,
+  RALLY_ASSIST,
+  resolveStroke,
+  type RallyAssistConfig,
+  type RallyAssistMode,
+  type StrokeInput,
+} from './RallyAssist';
 import type { StageLayout } from './StageProps';
+
+export { BALL_RADIUS } from './BallPhysics';
+export type { BallSample } from './BallPhysics';
 
 /**
  * Everything on the stage that is not a puppet: the flies, the ball, the
@@ -11,6 +27,10 @@ import type { StageLayout } from './StageProps';
  *
  * The scene never moves a puppet. It only reads where the paddles are and how
  * fast they travel, so direct control is never taken away from the hand.
+ *
+ * The ball is simulated in fixed steps (BallPhysics), tested against each
+ * paddle along both their motions (RacketCollision), and sent on its way by
+ * the stroke model with a capped amount of aim assistance (RallyAssist).
  */
 
 export type SceneMode = 'hunt' | 'rally';
@@ -51,6 +71,12 @@ export interface Ball {
   bounces: Record<Side, number>;
   /** When the ball last changed state (ms). */
   stateAt: number;
+  /**
+   * Where to draw it: the physics state carried forward over the fraction of
+   * a step the display is ahead of the simulation, so it glides at any frame rate.
+   */
+  renderX: number;
+  renderY: number;
   /** Recent positions, newest first, for the streak behind the ball. */
   trail: Point[];
 }
@@ -111,14 +137,81 @@ export interface SceneEvent {
   text: string;
 }
 
-export interface BallSample {
+/** One valid paddle contact. */
+export interface RallyContact {
+  side: Side;
+  /** CORE: the discs really touched. ASSIST: a near pass rescued by the forgiveness ring. */
+  kind: ContactKind;
+  /** 0..1 */
+  quality: number;
+  /** Aim-assist weight that was applied, 0..the preset's ceiling, and how far the pace was drawn toward a landing one. */
+  weight: number;
+  pace: number;
+  /** 0..1: how hard the stroke was. */
+  power: number;
+  /** Speed the ball left with, stage units / s. */
+  speed: number;
   x: number;
   y: number;
-  vy: number;
+  /** When it happened (ms). */
+  at: number;
+  human: boolean;
+}
+
+/** Counters of the ball game. Every number is counted from a real event; none is estimated. */
+export interface RallyStats {
+  /** Rallies that ended after at least one valid paddle contact. */
+  rallies: number;
+  longest: number;
+  /** Mean paddle contacts per finished rally. */
+  averageLength: number;
+  coreContacts: number;
+  assistedContacts: number;
+  /** Balls that came within reach of an active paddle whose turn it was. */
+  attempts: number;
+  /** Attempts that ended without a contact. */
+  misses: number;
+  averageQuality: number;
+  /** Time the ball last spent in the air between two contacts, and the mean, ms. */
+  travelMs: number;
+  averageTravelMs: number;
+  /** Re-contacts of the same stroke that were refused (each stroke counts once). */
+  blockedDoubleHits: number;
+}
+
+export const emptyRallyStats = (): RallyStats => ({
+  rallies: 0,
+  longest: 0,
+  averageLength: 0,
+  coreContacts: 0,
+  assistedContacts: 0,
+  attempts: 0,
+  misses: 0,
+  averageQuality: 0,
+  travelMs: 0,
+  averageTravelMs: 0,
+  blockedDoubleHits: 0,
+});
+
+/** The ball's predicted flight, from the same steps the live ball will take. */
+export interface Forecast {
+  valid: boolean;
+  /** Seconds since the forecast was made; a sample's time minus this is how far ahead it lies. */
+  age: number;
+  count: number;
+  samples: BallSample[];
+}
+
+/** What a puppet is doing in the rally, for the pose extras and the debug view. */
+export type RallyPhase = 'READY' | 'ANTICIPATE' | 'SWING' | 'CONTACT' | 'FOLLOW' | 'RECOVER';
+
+/** Where the ball will come nearest a paddle that stays where it is. */
+export interface Arrival {
+  valid: boolean;
+  x: number;
+  y: number;
   /** Seconds from now. */
   t: number;
-  /** Table bounces so far along this prediction. */
-  bounces: number;
 }
 
 const FLY_COUNT = 7;
@@ -132,15 +225,35 @@ const STUN_MS = 2400;
 /** Swats that end the hunt and bring out the ball. */
 const SWATS_TO_RALLY = 5;
 
-export const BALL_RADIUS = 6.5;
-const GRAVITY = 560;
-const AIR_DRAG = 0.12;
-const TABLE_BOUNCE = 0.86;
-const BALL_MAX_SPEED = 820;
-/** The paddle catches the ball a little beyond its drawn edge, and steers the return toward the far half of the table. */
-const PADDLE_REACH = 1.35;
-const AIM_ASSIST = 0.72;
-const HIT_COOLDOWN_MS = 260;
+/** The most physics steps one frame may run (a stalled tab must not replay seconds of flight at once). */
+const MAX_STEPS_PER_FRAME = 36;
+/**
+ * A stroke owns the ball. The same paddle is never credited again within this
+ * long, whatever happens in between, and after that only once the ball has
+ * come back off the table, the net or a wall, or the other paddle has played
+ * it. The other paddle is never held back by it.
+ */
+const LOCK_MS = 220;
+/**
+ * Without such a rebound the paddle must wait this long, and the ball must
+ * have left its zones. A hand swings faster than a ball may fly, so the paddle
+ * often overtakes its own shot during the follow-through; the ball has to be
+ * able to pass it then. A ball popped straight up can still be played again
+ * on its way down.
+ */
+const FOLLOW_THROUGH_MS = 650;
+/**
+ * A near-miss is not rescued while the paddle is being drawn back: moving
+ * away from the ball faster than this (stage units / s) and away from the net.
+ * That is a backswing or a retreat, not a stroke, and a ball that slips past
+ * it is simply missed. A forward swing that arrives a little early still is one.
+ */
+const RETREAT_LIMIT = 100;
+/** A ball within this many touching distances of a paddle whose turn it is counts as an attempt. */
+const ATTENTION = 2.4;
+const FORECAST_SECONDS = 1.6;
+const FORECAST_SPACING = 1 / 60;
+const FORECAST_SAMPLES = 97;
 const GRAB_RADIUS = 52;
 const SERVE_DELAY_MS = 1500;
 /** Serves that nobody returns before the scene goes back to the hunt. */
@@ -148,61 +261,6 @@ const IDLE_SERVES = 3;
 const MAX_EVENTS = 5;
 const MAX_IMPACTS = 8;
 const TRAIL_LENGTH = 9;
-
-type Contact = 'none' | 'table' | 'net' | 'ground' | 'wall';
-
-interface Body {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-}
-
-/** One physics step of the ball. Shared by the live ball and by trajectory prediction. */
-function stepBall(b: Body, dt: number, layout: StageLayout): Contact {
-  const { table, groundY, width, centerX } = layout;
-  const r = BALL_RADIUS;
-  const drag = Math.exp(-AIR_DRAG * dt);
-  b.vy += GRAVITY * dt;
-  b.vx *= drag;
-  b.vy *= drag;
-  const px = b.x;
-  const py = b.y;
-  b.x += b.vx * dt;
-  b.y += b.vy * dt;
-
-  if (b.vy > 0 && py <= table.top - r + 0.5 && b.y > table.top - r && b.x > table.left - r && b.x < table.right + r) {
-    b.y = table.top - r;
-    b.vy = -b.vy * TABLE_BOUNCE;
-    b.vx *= 0.985;
-    return 'table';
-  }
-  if ((px - centerX) * (b.x - centerX) <= 0 && px !== b.x && b.y > table.netTop - r && b.y < table.top) {
-    const from = px < centerX ? -1 : 1;
-    b.x = centerX + from * (r + 0.5);
-    b.vx = -b.vx * 0.35;
-    return 'net';
-  }
-  if (b.y > groundY - r) {
-    b.y = groundY - r;
-    return 'ground';
-  }
-  if (b.x < r) {
-    b.x = r;
-    b.vx = Math.abs(b.vx) * 0.6;
-    return 'wall';
-  }
-  if (b.x > width - r) {
-    b.x = width - r;
-    b.vx = -Math.abs(b.vx) * 0.6;
-    return 'wall';
-  }
-  if (b.y < r) {
-    b.y = r;
-    b.vy = Math.abs(b.vy) * 0.5;
-  }
-  return 'none';
-}
 
 const sideOf = (x: number, layout: StageLayout): Side => (x < layout.centerX ? 'left' : 'right');
 const panOf = (x: number, layout: StageLayout) => clamp((x / layout.width) * 2 - 1, -1, 1);
@@ -221,6 +279,8 @@ export class SceneController {
     lastHitter: null,
     bounces: { left: 0, right: 0 },
     stateAt: 0,
+    renderX: 0,
+    renderY: 0,
     trail: [],
   };
   /** The newest events, oldest first. */
@@ -240,8 +300,53 @@ export class SceneController {
   readonly holding: Record<Side, boolean> = { left: false, right: false };
   readonly nearFly: Record<Side, boolean> = { left: false, right: false };
 
+  /** The rally-assistance preset in force. Changing it touches nothing else: no ball, puppet or count is reset. */
+  assist: RallyAssistConfig = RALLY_ASSIST[DEFAULT_RALLY_ASSIST];
+  readonly stats: RallyStats = emptyRallyStats();
+  /** Valid contacts made by the latest update (almost always none, sometimes one). */
+  readonly contacts: RallyContact[] = [];
+  /** The most recent valid contact, and how each paddle's latest attempt ended. */
+  lastContact: RallyContact | null = null;
+  readonly lastOutcome: Record<Side, ContactKind | 'MISS' | null> = { left: null, right: null };
+  /** Each paddle's contact zones as of this frame (for the debug view). */
+  readonly zones: Record<Side, ContactZones> = {
+    left: { core: 0, forgiveness: 0, leadX: 0, leadY: 0 },
+    right: { core: 0, forgiveness: 0, leadX: 0, leadY: 0 },
+  };
+  readonly forecast: Forecast = { valid: false, age: 0, count: 0, samples: Array.from({ length: FORECAST_SAMPLES }, emptySample) };
+  readonly arrival: Record<Side, Arrival> = { left: { valid: false, x: 0, y: 0, t: 0 }, right: { valid: false, x: 0, y: 0, t: 0 } };
+  readonly phase: Record<Side, RallyPhase> = { left: 'READY', right: 'READY' };
+
   private readonly random = mulberry32(7731);
   private readonly hitAt: Record<Side, number> = { left: -Infinity, right: -Infinity };
+  private readonly missAt: Record<Side, number> = { left: -Infinity, right: -Infinity };
+  /** Where each paddle was at the simulation's own time (which trails the display by under one step). */
+  private readonly paddleAt: Record<Side, { x: number; y: number; valid: boolean }> = {
+    left: { x: 0, y: 0, valid: false },
+    right: { x: 0, y: 0, valid: false },
+  };
+  private readonly lock: Record<Side, { active: boolean; at: number; counted: boolean; rebounded: boolean; holdMs: number }> = {
+    left: { active: false, at: 0, counted: false, rebounded: false, holdMs: LOCK_MS },
+    right: { active: false, at: 0, counted: false, rebounded: false, holdMs: LOCK_MS },
+  };
+  private readonly approached: Record<Side, boolean> = { left: false, right: false };
+  private readonly attempt: Record<Side, boolean> = { left: false, right: false };
+  /** This side has already let the ball in play go by: one ball, one miss, however often it comes back within reach. */
+  private readonly passed: Record<Side, boolean> = { left: false, right: false };
+  private readonly missStreak: Record<Side, number> = { left: 0, right: 0 };
+  private readonly swept = emptyContact();
+  private readonly next: BallBody = { x: 0, y: 0, vx: 0, vy: 0 };
+  private readonly stroke = emptyStroke();
+  private readonly strokeInput: StrokeInput;
+  /** Simulation time not yet stepped, seconds (always under one step after an update). */
+  private debt = 0;
+  private forecastAt = 0;
+  private physicsTime = 0;
+  private totalHits = 0;
+  private qualitySum = 0;
+  private travelSum = 0;
+  private travelCount = 0;
+  private lastContactAt = 0;
   private startedAt: number | null = null;
   private serveAt = Infinity;
   private nextReceiver: Side = 'left';
@@ -252,6 +357,22 @@ export class SceneController {
   private clock = 0;
 
   constructor(layout: StageLayout) {
+    this.strokeInput = {
+      side: 'left',
+      layout,
+      config: this.assist,
+      ballX: 0,
+      ballY: 0,
+      ballVx: 0,
+      ballVy: 0,
+      paddleVx: 0,
+      paddleVy: 0,
+      nx: 0,
+      ny: -1,
+      quality: 1,
+      opponentX: null,
+      random: this.random,
+    };
     for (let i = 0; i < FLY_COUNT; i++) {
       this.flies.push({
         x: lerp(0.2, 0.8, this.random()) * layout.width,
@@ -274,6 +395,45 @@ export class SceneController {
   /** Whether the ball is in play. */
   get rallyLive() {
     return this.ball.state === 'live';
+  }
+
+  /** The stroke most recently resolved: what the paddle alone did, what the safe return would have been, and the blend. */
+  get lastStroke() {
+    return this.stroke;
+  }
+
+  /** Switches the rally-assistance preset. Safe at any moment of play. */
+  setAssist(mode: RallyAssistMode) {
+    this.assist = RALLY_ASSIST[mode];
+  }
+
+  /** Puts a live ball into play with a given position and velocity (serves, tests, benchmarks). */
+  launchBall(x: number, y: number, vx: number, vy: number, now: number, hitter: Side | null = null) {
+    const ball = this.ball;
+    ball.state = 'live';
+    ball.holder = null;
+    ball.stateAt = now;
+    ball.x = ball.renderX = x;
+    ball.y = ball.renderY = y;
+    ball.vx = vx;
+    ball.vy = vy;
+    ball.lastHitter = hitter;
+    ball.bounces.left = 0;
+    ball.bounces.right = 0;
+    ball.trail.length = 0;
+    this.debt = 0;
+    this.forecast.valid = false;
+    for (const side of SIDES) {
+      this.lock[side].active = hitter === side;
+      this.lock[side].at = now;
+      this.lock[side].counted = false;
+      this.lock[side].rebounded = false;
+      // A ball let go of is a toss, not a stroke: the hand that tossed it may strike it as soon as it is clear.
+      this.lock[side].holdMs = LOCK_MS;
+      this.approached[side] = false;
+      this.attempt[side] = false;
+      this.passed[side] = false;
+    }
   }
 
   setMode(mode: SceneMode, now: number) {
@@ -308,6 +468,7 @@ export class SceneController {
   ) {
     this.startedAt ??= now;
     this.clock = now;
+    this.contacts.length = 0;
     const anyHuman = paddles.left.human || paddles.right.human;
     if (anyHuman) this.lastHumanAt = now;
     // With nobody at the stage the rally winds down by itself.
@@ -318,24 +479,14 @@ export class SceneController {
     this.updateFlies(now, dt, layout, paddles, agentSide, carryPoints);
   }
 
-  /** Predicts the ball's flight from now on; used by the agent to decide where to stand. */
+  /**
+   * Predicts the ball's flight from now on, one sample every `step` seconds.
+   * It runs the same fixed steps the live ball will take, so (until a paddle
+   * touches the ball) the prediction and the flight are the same thing.
+   */
   predict(layout: StageLayout, seconds: number, step: number, out: BallSample[]): number {
     if (this.ball.state !== 'live') return 0;
-    const body: Body = { x: this.ball.x, y: this.ball.y, vx: this.ball.vx, vy: this.ball.vy };
-    let bounces = 0;
-    let count = 0;
-    for (let t = step; t <= seconds && count < out.length; t += step) {
-      const contact = stepBall(body, step, layout);
-      if (contact === 'table') bounces += 1;
-      const sample = out[count++];
-      sample.x = body.x;
-      sample.y = body.y;
-      sample.vy = body.vy;
-      sample.t = t;
-      sample.bounces = bounces;
-      if (contact === 'ground') break;
-    }
-    return count;
+    return predictFlight(this.ball, layout, seconds, step, out);
   }
 
   /* ---------------------------------------------------------------- grabbing */
@@ -369,14 +520,8 @@ export class SceneController {
       const letGo = paddle.justReleased || !paddle.active || !paddle.grabbing;
       if (letGo && holdsBall) {
         const dir = side === 'left' ? 1 : -1;
-        ball.state = 'live';
-        ball.holder = null;
-        ball.stateAt = now;
-        ball.vx = clamp(paddle.vx * 0.9 + dir * 90, -BALL_MAX_SPEED, BALL_MAX_SPEED);
-        ball.vy = clamp(paddle.vy * 0.9 - 230, -BALL_MAX_SPEED, BALL_MAX_SPEED);
-        ball.lastHitter = side;
-        ball.bounces.left = 0;
-        ball.bounces.right = 0;
+        const limit = MAX_BALL_SPEED;
+        this.launchBall(ball.x, ball.y, clamp(paddle.vx * 0.9 + dir * 90, -limit, limit), clamp(paddle.vy * 0.9 - 230, -limit, limit), now, side);
         this.beginRally(now, true);
         this.log(now, 'player serve');
         this.cue('serve', paddle.x, paddle.y, layout, 0.6);
@@ -431,6 +576,7 @@ export class SceneController {
     this.rallyHits = humanHit ? 1 : 0;
     this.rallySeconds = 0;
     this.humanHits = humanHit ? 1 : 0;
+    this.lastContactAt = humanHit ? now : 0;
   }
 
   private serve(now: number, layout: StageLayout, paddles: Record<Side, PaddleInput>) {
@@ -443,22 +589,11 @@ export class SceneController {
     const receiver = humans.length === 1 ? humans[0] : this.nextReceiver;
     this.nextReceiver = receiver === 'left' ? 'right' : 'left';
     const dir = receiver === 'right' ? 1 : -1;
-    const ball = this.ball;
-    ball.state = 'live';
-    ball.holder = null;
-    ball.stateAt = now;
-    ball.x = layout.centerX - dir * 34;
-    ball.y = Math.max(40, layout.table.top - 250);
-    ball.vx = dir * 88;
-    ball.vy = 0;
-    ball.lastHitter = null;
-    ball.bounces.left = 0;
-    ball.bounces.right = 0;
-    ball.trail.length = 0;
+    this.launchBall(layout.centerX - dir * 34, Math.max(40, layout.table.top - 250), dir * 88, 0, now);
     this.serveAt = Infinity;
     this.beginRally(now, false);
     this.log(now, 'serve');
-    this.cue('serve', ball.x, ball.y, layout, 0.4);
+    this.cue('serve', this.ball.x, this.ball.y, layout, 0.4);
   }
 
   private endRally(now: number, layout: StageLayout, reason: string) {
@@ -466,6 +601,16 @@ export class SceneController {
     ball.state = 'dead';
     ball.stateAt = now;
     this.bestRally = Math.max(this.bestRally, this.rallyHits);
+    // A rally only counts once a paddle has really met the ball.
+    if (this.rallyHits > 0) {
+      const stats = this.stats;
+      stats.rallies += 1;
+      this.totalHits += this.rallyHits;
+      stats.longest = Math.max(stats.longest, this.rallyHits);
+      stats.averageLength = this.totalHits / stats.rallies;
+    }
+    // Whoever still had the ball within reach has missed it.
+    for (const side of SIDES) this.closeAttempt(side, now);
     this.log(now, reason);
     this.cue('miss', ball.x, ball.y, layout, 0.5);
     this.idleServes = this.humanHits === 0 ? this.idleServes + 1 : 0;
@@ -481,100 +626,323 @@ export class SceneController {
     const ball = this.ball;
     if (this.mode === 'rally' && ball.state !== 'live' && ball.state !== 'held' && now >= this.serveAt) this.serve(now, layout, paddles);
 
-    if (ball.state === 'held' && ball.holder) {
-      const paddle = paddles[ball.holder];
-      ball.x = paddle.x;
-      ball.y = paddle.y - paddle.radius * 0.15;
+    if (ball.state !== 'live') {
+      this.forecast.valid = false;
+      this.rememberPaddles(paddles, 1);
+      for (const side of SIDES) {
+        const paddle = paddles[side];
+        this.arrival[side].valid = false;
+        this.phase[side] = this.phaseOf(side, paddle, now);
+        // Kept current while no ball is in play, so the debug view always shows the zones a ball would meet.
+        if (paddle.active) buildZones(this.assist, paddle.radius, paddle.vx, paddle.vy, 0, 0, paddle.human ? this.missStreak[side] : 0, this.zones[side]);
+      }
+      if (ball.state === 'held' && ball.holder) {
+        const paddle = paddles[ball.holder];
+        ball.x = ball.renderX = paddle.x;
+        ball.y = ball.renderY = paddle.y - paddle.radius * 0.15;
+      } else if (ball.state === 'dead') {
+        // Roll to a stop where it fell.
+        ball.vx *= Math.exp(-4 * dt);
+        ball.x = ball.renderX = clamp(ball.x + ball.vx * dt, BALL_RADIUS, layout.width - BALL_RADIUS);
+        ball.renderY = ball.y;
+        ball.angle += (ball.vx * dt) / BALL_RADIUS;
+      }
       return;
     }
-    if (ball.state === 'dead') {
-      // Roll to a stop where it fell.
-      ball.vx *= Math.exp(-4 * dt);
-      ball.x = clamp(ball.x + ball.vx * dt, BALL_RADIUS, layout.width - BALL_RADIUS);
-      ball.angle += (ball.vx * dt) / BALL_RADIUS;
-      return;
-    }
-    if (ball.state !== 'live') return;
 
     this.rallySeconds = (now - this.rallyStartedAt) / 1000;
-    // Two half steps keep a fast ball from tunnelling through the table or a paddle.
-    const steps = dt > 1 / 90 ? 2 : 1;
-    const h = dt / steps;
-    for (let i = 0; i < steps && ball.state === 'live'; i++) {
-      const contact = stepBall(ball, h, layout);
-      if (contact === 'table') {
-        const side = sideOf(ball.x, layout);
-        ball.bounces[side] += 1;
-        this.cue('bounce', ball.x, ball.y, layout, clamp(Math.abs(ball.vy) / 500, 0.2, 1));
-        if (ball.bounces[side] >= 2) {
-          this.endRally(now, layout, 'return missed');
-          break;
-        }
-        this.log(now, 'table contact');
-      } else if (contact === 'ground') {
-        ball.vx *= 0.5;
-        this.endRally(now, layout, 'return missed');
-        break;
-      } else if (contact === 'net') {
-        this.log(now, 'net');
+
+    // Fixed steps from an accumulator: the same states at any frame rate.
+    const total = this.debt + dt;
+    const steps = Math.min(MAX_STEPS_PER_FRAME, Math.floor(total / PHYSICS_STEP + 1e-9));
+    for (const side of SIDES) {
+      const memory = this.paddleAt[side];
+      const paddle = paddles[side];
+      // A paddle that just appeared (or jumped) has no motion to sweep.
+      if (!memory.valid || Math.hypot(paddle.x - memory.x, paddle.y - memory.y) > 420) {
+        memory.x = paddle.x;
+        memory.y = paddle.y;
+        memory.valid = true;
       }
-      for (const side of SIDES) this.collide(side, paddles[side], now, layout);
     }
-    ball.angle += (ball.vx * dt) / 40;
-    ball.trail.unshift({ x: ball.x, y: ball.y });
-    if (ball.trail.length > TRAIL_LENGTH) ball.trail.length = TRAIL_LENGTH;
+    let done = 0;
+    for (; done < steps && ball.state === 'live'; done++) {
+      this.step(now, layout, paddles, (done * PHYSICS_STEP) / total, ((done + 1) * PHYSICS_STEP) / total);
+      this.physicsTime += PHYSICS_STEP;
+    }
+    // After a long stall the surplus is dropped rather than replayed.
+    this.debt = steps === MAX_STEPS_PER_FRAME ? 0 : total - steps * PHYSICS_STEP;
+    this.rememberPaddles(paddles, steps > 0 ? (steps * PHYSICS_STEP) / total : 0);
+
+    if (ball.state === 'live') {
+      ball.renderX = ball.x + ball.vx * this.debt;
+      ball.renderY = ball.y + ball.vy * this.debt;
+      ball.angle += (ball.vx * dt) / 40;
+      ball.trail.unshift({ x: ball.renderX, y: ball.renderY });
+      if (ball.trail.length > TRAIL_LENGTH) ball.trail.length = TRAIL_LENGTH;
+      this.refreshForecast(layout);
+    } else {
+      ball.renderX = ball.x;
+      ball.renderY = ball.y;
+      this.forecast.valid = false;
+    }
+    for (const side of SIDES) {
+      this.trackAttempt(side, paddles[side], now, layout);
+      this.phase[side] = this.phaseOf(side, paddles[side], now);
+    }
   }
 
-  private collide(side: Side, paddle: PaddleInput, now: number, layout: StageLayout) {
+  /** Moves each paddle's remembered position along its motion to the simulation's new time. */
+  private rememberPaddles(paddles: Record<Side, PaddleInput>, fraction: number) {
+    for (const side of SIDES) {
+      const memory = this.paddleAt[side];
+      const paddle = paddles[side];
+      if (!paddle.active) {
+        memory.valid = false;
+        continue;
+      }
+      if (!memory.valid) {
+        memory.x = paddle.x;
+        memory.y = paddle.y;
+        memory.valid = true;
+      } else {
+        memory.x += (paddle.x - memory.x) * fraction;
+        memory.y += (paddle.y - memory.y) * fraction;
+      }
+    }
+  }
+
+  /**
+   * One fixed step. The ball's flight for the step is worked out first; each
+   * paddle is then swept along its own motion over the same step against it.
+   * On contact the ball flies only up to the contact, is given its new
+   * velocity there, and then flies the rest of the step.
+   */
+  private step(now: number, layout: StageLayout, paddles: Record<Side, PaddleInput>, from: number, to: number) {
     const ball = this.ball;
-    if (!paddle.active || ball.state !== 'live' || now - this.hitAt[side] < HIT_COOLDOWN_MS) return;
-    const dx = ball.x - paddle.x;
-    const dy = ball.y - paddle.y;
-    const distance = Math.hypot(dx, dy);
-    if (distance > paddle.radius * PADDLE_REACH + BALL_RADIUS) return;
+    const next = this.next;
+    next.x = ball.x;
+    next.y = ball.y;
+    next.vx = ball.vx;
+    next.vy = ball.vy;
+    let world = stepBall(next, PHYSICS_STEP, layout);
 
-    const dir = side === 'left' ? 1 : -1;
-    const { table, centerX } = layout;
-    // Where a good return lands: somewhere on the far half of the table.
-    const tx = centerX + dir * lerp(0.3, 0.78, this.random()) * (table.right - centerX);
-    const ty = table.top - BALL_RADIUS;
-    let time = clamp(Math.abs(tx - ball.x) / 270, 0.55, 1.15);
-    let ix = 0;
-    let iy = 0;
-    for (let attempt = 0; attempt < 7; attempt++) {
-      ix = (tx - ball.x) / time;
-      iy = (ty - ball.y - 0.5 * GRAVITY * time * time) / time;
-      const toNet = (centerX - ball.x) / ix;
-      const netY = ball.y + iy * toNet + 0.5 * GRAVITY * toNet * toNet;
-      if (toNet <= 0 || toNet >= time || netY < table.netTop - 16) break;
-      time += 0.12;
+    for (const side of SIDES) {
+      const paddle = paddles[side];
+      const memory = this.paddleAt[side];
+      if (!paddle.active || !memory.valid) continue;
+      const px0 = memory.x + (paddle.x - memory.x) * from;
+      const py0 = memory.y + (paddle.y - memory.y) * from;
+      const px1 = memory.x + (paddle.x - memory.x) * to;
+      const py1 = memory.y + (paddle.y - memory.y) * to;
+      const zones = buildZones(this.assist, paddle.radius, paddle.vx, paddle.vy, ball.vx, ball.vy, paddle.human ? this.missStreak[side] : 0, this.zones[side]);
+
+      // A stroke owns the ball until it has left the paddle's zones: one contact, one hit, however the paddle follows through.
+      const lock = this.lock[side];
+      if (lock.active) {
+        const gone = Math.hypot(next.x - px1, next.y - py1) > zones.forgiveness + Math.hypot(zones.leadX, zones.leadY) + 3;
+        const waited = now - lock.at;
+        const newBall = lock.rebounded || ball.lastHitter !== side;
+        if (newBall ? waited >= LOCK_MS : gone && waited >= lock.holdMs) lock.active = false;
+      }
+
+      const hit = sweepContact(ball.x, ball.y, next.x, next.y, px0, py0, px1, py1, zones, this.approached[side], this.swept);
+      this.approached[side] = this.swept.closing;
+      if (!hit) continue;
+      const drawnBack = paddle.vx * hit.nx + paddle.vy * hit.ny < -RETREAT_LIMIT && paddle.vx * (side === 'left' ? 1 : -1) < 0;
+      if (hit.kind === 'ASSIST' && drawnBack) continue;
+      if (lock.active) {
+        if (!lock.counted && hit.kind === 'CORE') {
+          lock.counted = true;
+          this.stats.blockedDoubleHits += 1;
+        }
+        continue;
+      }
+
+      // Fly to the moment of contact, strike, and fly the remainder of the step.
+      fly(ball, hit.time * PHYSICS_STEP);
+      this.strike(side, paddle, paddles[side === 'left' ? 'right' : 'left'], zones, now, layout);
+      next.x = ball.x;
+      next.y = ball.y;
+      next.vx = ball.vx;
+      next.vy = ball.vy;
+      world = stepBall(next, (1 - hit.time) * PHYSICS_STEP, layout);
+      break;
     }
 
-    // The physical part: bounce off the paddle face and pick up some of its swing.
-    const nx = distance > 1e-3 ? dx / distance : dir;
-    const ny = distance > 1e-3 ? dy / distance : -0.3;
-    const closing = Math.min(0, (ball.vx - paddle.vx) * nx + (ball.vy - paddle.vy) * ny);
-    const px = ball.vx - 1.8 * closing * nx + paddle.vx * 0.35;
-    const py = ball.vy - 1.8 * closing * ny + paddle.vy * 0.35;
+    ball.x = next.x;
+    ball.y = next.y;
+    ball.vx = next.vx;
+    ball.vy = next.vy;
+    this.afterWorldContact(world, now, layout);
+  }
 
-    let vx = lerp(px, ix, AIM_ASSIST);
-    let vy = lerp(py, iy, AIM_ASSIST);
-    if (vx * dir < 70) vx = dir * Math.max(70, Math.abs(ix));
-    const speed = Math.hypot(vx, vy);
-    if (speed > BALL_MAX_SPEED) {
-      vx *= BALL_MAX_SPEED / speed;
-      vy *= BALL_MAX_SPEED / speed;
+  private afterWorldContact(contact: BallContact, now: number, layout: StageLayout) {
+    const ball = this.ball;
+    // Once the ball has come back off the table, the net or a wall, it is a new ball for whoever reaches it.
+    if (contact !== 'none') this.lock.left.rebounded = this.lock.right.rebounded = true;
+    if (contact === 'table') {
+      const side = sideOf(ball.x, layout);
+      ball.bounces[side] += 1;
+      this.cue('bounce', ball.x, ball.y, layout, clamp(Math.abs(ball.vy) / 500, 0.2, 1));
+      if (ball.bounces[side] >= 2) this.endRally(now, layout, 'return missed');
+      else this.log(now, 'table contact');
+    } else if (contact === 'ground') {
+      ball.vx *= 0.5;
+      this.endRally(now, layout, 'return missed');
+    } else if (contact === 'net') {
+      this.log(now, 'net');
     }
-    ball.vx = vx;
-    ball.vy = vy;
+  }
+
+  /** A valid contact: resolve the stroke, hand the ball its new velocity, and count it, once. */
+  private strike(side: Side, paddle: PaddleInput, opponent: PaddleInput, zones: ContactZones, now: number, layout: StageLayout) {
+    const ball = this.ball;
+    const hit = this.swept;
+    const quality = contactQuality(hit, zones);
+    const input = this.strokeInput;
+    input.side = side;
+    input.layout = layout;
+    input.config = this.assist;
+    input.ballX = ball.x;
+    input.ballY = ball.y;
+    input.ballVx = ball.vx;
+    input.ballVy = ball.vy;
+    input.paddleVx = paddle.vx;
+    input.paddleVy = paddle.vy;
+    input.nx = hit.nx;
+    input.ny = hit.ny;
+    input.quality = quality;
+    input.opponentX = opponent.active ? opponent.x : null;
+    const stroke = resolveStroke(input, this.stroke);
+
+    let speed = Math.hypot(stroke.vx, stroke.vy);
+    const limit = MAX_BALL_SPEED * Math.sqrt(layout.puppetScale / 0.8);
+    const scale = speed > limit ? limit / speed : 1;
+    ball.vx = stroke.vx * scale;
+    ball.vy = stroke.vy * scale;
+    speed *= scale;
     ball.lastHitter = side;
     ball.bounces.left = 0;
     ball.bounces.right = 0;
+
+    const lock = this.lock[side];
+    lock.active = true;
+    lock.at = now;
+    lock.counted = false;
+    lock.rebounded = false;
+    lock.holdMs = FOLLOW_THROUGH_MS;
+    this.approached.left = false;
+    this.approached.right = false;
+    this.forecast.valid = false;
     this.hitAt[side] = now;
+    this.attempt[side] = false;
+    this.passed.left = false;
+    this.passed.right = false;
+    this.missStreak[side] = 0;
+    this.lastOutcome[side] = hit.kind;
+
+    const stats = this.stats;
+    stats.attempts += 1;
+    if (hit.kind === 'CORE') stats.coreContacts += 1;
+    else stats.assistedContacts += 1;
+    this.qualitySum += quality;
+    stats.averageQuality = this.qualitySum / (stats.coreContacts + stats.assistedContacts);
+    if (this.lastContactAt > 0) {
+      stats.travelMs = now - this.lastContactAt;
+      this.travelSum += stats.travelMs;
+      this.travelCount += 1;
+      stats.averageTravelMs = this.travelSum / this.travelCount;
+    }
+    this.lastContactAt = now;
     this.rallyHits += 1;
     if (paddle.human) this.humanHits += 1;
+
+    const contact: RallyContact = { side, kind: hit.kind, quality, weight: stroke.weight, pace: stroke.pace, power: stroke.power, speed, x: ball.x, y: ball.y, at: now, human: paddle.human };
+    this.contacts.push(contact);
+    this.lastContact = contact;
     this.log(now, `${paddle.human ? 'player' : 'CPU'} return accepted`);
-    this.cue('hit', ball.x, ball.y, layout, clamp(speed / 600, 0.3, 1));
+    this.cue('hit', ball.x, ball.y, layout, clamp(0.3 + 0.7 * stroke.power, 0.3, 1));
+  }
+
+  /** The ball's flight is only re-predicted when something has changed it, or the forecast is running out. */
+  private refreshForecast(layout: StageLayout) {
+    const forecast = this.forecast;
+    forecast.age = this.physicsTime - this.forecastAt;
+    if (forecast.valid && forecast.age < FORECAST_SECONDS * 0.6) return;
+    forecast.count = predictFlight(this.ball, layout, FORECAST_SECONDS, FORECAST_SPACING, forecast.samples);
+    forecast.valid = forecast.count > 0;
+    forecast.age = 0;
+    this.forecastAt = this.physicsTime;
+  }
+
+  /**
+   * Whether the live ball is this side's to play: the other side's shot, or a
+   * serve on its way to this side. A serve is dropped beside the net and
+   * drifts toward its receiver, so it belongs to the side it is travelling
+   * to, wherever it happens to be.
+   */
+  toPlay(side: Side, layout: StageLayout): boolean {
+    const ball = this.ball;
+    if (ball.state !== 'live') return false;
+    if (ball.lastHitter !== null) return ball.lastHitter !== side;
+    const toward = ball.vx !== 0 ? ball.vx : ball.x - layout.centerX;
+    return side === 'left' ? toward < 0 : toward > 0;
+  }
+
+  /** Attempts and misses: a ball that came within reach of a paddle whose turn it was, and how that ended. */
+  private trackAttempt(side: Side, paddle: PaddleInput, now: number, layout: StageLayout) {
+    const arrival = this.arrival[side];
+    arrival.valid = false;
+    if (!paddle.active || !this.toPlay(side, layout)) {
+      this.closeAttempt(side, now);
+      return;
+    }
+    const ball = this.ball;
+    const reach = (paddle.radius + BALL_RADIUS) * ATTENTION;
+    const distance = Math.hypot(ball.x - paddle.x, ball.y - paddle.y);
+    if (distance < reach) this.attempt[side] = !this.passed[side];
+    else if (this.attempt[side] && distance > reach * 1.2) this.closeAttempt(side, now);
+
+    // Where the predicted flight comes nearest this paddle if it stays put.
+    const forecast = this.forecast;
+    if (!forecast.valid) return;
+    let best = Infinity;
+    for (let i = 0; i < forecast.count; i++) {
+      const sample = forecast.samples[i];
+      const ahead = sample.t - forecast.age;
+      if (ahead < 0) continue;
+      const d = Math.hypot(sample.x - paddle.x, sample.y - paddle.y);
+      if (d < best) {
+        best = d;
+        arrival.valid = true;
+        arrival.x = sample.x;
+        arrival.y = sample.y;
+        arrival.t = ahead;
+      }
+    }
+  }
+
+  private closeAttempt(side: Side, now: number) {
+    if (!this.attempt[side]) return;
+    this.attempt[side] = false;
+    this.passed[side] = true;
+    this.stats.attempts += 1;
+    this.stats.misses += 1;
+    this.missStreak[side] += 1;
+    this.missAt[side] = now;
+    this.lastOutcome[side] = 'MISS';
+  }
+
+  private phaseOf(side: Side, paddle: PaddleInput, now: number): RallyPhase {
+    if (!paddle.active || this.mode !== 'rally') return 'READY';
+    const sinceHit = now - this.hitAt[side];
+    if (sinceHit < 90) return 'CONTACT';
+    if (sinceHit < 380) return 'FOLLOW';
+    if (sinceHit < 760 || now - this.missAt[side] < 500) return 'RECOVER';
+    const arrival = this.arrival[side];
+    if (!arrival.valid) return 'READY';
+    return arrival.t < 0.24 && Math.hypot(paddle.vx, paddle.vy) > 90 ? 'SWING' : 'ANTICIPATE';
   }
 
   /* ---------------------------------------------------------------- flies */

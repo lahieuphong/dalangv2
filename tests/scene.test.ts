@@ -158,14 +158,18 @@ describe('rally', () => {
     paddle.y = 40;
     scene.setMode('rally', time());
     step(60 * 2);
-    // Follow the ball with the paddle until they meet.
-    for (let i = 0; i < 300 && scene.rallyHits === 0 && scene.ball.state === 'live'; i++) {
-      if (scene.ball.bounces.left > 0) {
-        paddle.x = scene.ball.x;
-        paddle.y = scene.ball.y;
-      }
-      step(1);
+    // Hold the paddle just behind and below where the serve will be at the top of its bounce, and wait for it.
+    const forecast = scene.forecast;
+    expect(forecast.valid).toBe(true);
+    let top = forecast.samples[0];
+    for (let i = 0; i < forecast.count; i++) {
+      const sample = forecast.samples[i];
+      if (sample.bounces === 1 && (top.bounces !== 1 || sample.y < top.y)) top = sample;
     }
+    expect(top.bounces).toBe(1);
+    paddle.x = top.x - 14;
+    paddle.y = top.y + 12;
+    for (let i = 0; i < 300 && scene.rallyHits === 0 && scene.ball.state === 'live'; i++) step(1);
     expect(scene.rallyHits).toBe(1);
     expect(scene.ball.vx).toBeGreaterThan(0);
     paddle.x = 40;
@@ -221,9 +225,11 @@ describe('stage agent', () => {
     let now = 1000;
     scene.setMode('rally', now);
 
-    // The human "returns" every ball by simply sending it over; the agent has to do the rest.
+    // The human only holds a paddle where each ball will be at the top of its bounce; the agent has to do the rest.
     let cpuReturns = 0;
+    let humanReturns = 0;
     let last = { x: 0, y: 0 };
+    let parkedFor = '';
     for (let i = 0; i < 60 * 14; i++) {
       now += 1000 / 60;
       const rig = agent.update('right', now, 1 / 60, layout, scene);
@@ -239,17 +245,28 @@ describe('stage agent', () => {
       paddle.radius = joints.paddleRadius;
 
       const ball = scene.ball;
-      if (ball.state === 'live' && ball.x < layout.centerX && ball.bounces.left > 0 && ball.lastHitter !== 'left') {
-        paddles.left.x = ball.x;
-        paddles.left.y = ball.y;
-      } else {
-        paddles.left.x = 40;
-        paddles.left.y = 40;
+      const forecast = scene.forecast;
+      const coming = `${ball.stateAt}:${scene.rallyHits}`;
+      if (ball.state === 'live' && ball.lastHitter !== 'left' && forecast.valid && coming !== parkedFor) {
+        let top = null;
+        for (let n = 0; n < forecast.count; n++) {
+          const sample = forecast.samples[n];
+          if (sample.x < layout.centerX && sample.bounces === 1 && (!top || sample.y < top.y)) top = sample;
+        }
+        if (top) {
+          paddles.left.x = top.x - 14;
+          paddles.left.y = top.y + 12;
+          parkedFor = coming;
+        }
       }
       scene.update(now, 1 / 60, layout, paddles, 'right', null);
-      cpuReturns = Math.max(cpuReturns, scene.events.filter((event) => event.text === 'CPU return accepted').length);
+      for (const contact of scene.contacts) {
+        if (contact.human) humanReturns += 1;
+        else cpuReturns += 1;
+      }
     }
-    expect(cpuReturns).toBeGreaterThanOrEqual(1);
+    expect(humanReturns).toBeGreaterThanOrEqual(2);
+    expect(cpuReturns).toBeGreaterThanOrEqual(2);
   });
 
   it('joins a one-handed rally in the full pipeline and leaves when it ends', () => {

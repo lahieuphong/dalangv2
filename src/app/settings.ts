@@ -1,4 +1,5 @@
 import { DEFAULT_FINGER_MAP } from '../motion/PuppetMapping';
+import { DEFAULT_RALLY_ASSIST, RALLY_ASSIST_MODES, type RallyAssistMode } from '../scene/RallyAssist';
 import { isSimScript, type SimScript } from '../tracking/SimulatedHands';
 import { FINGER_NAMES, JOINT_CHANNELS, type FingerMap, type FingerName, type QualityPreset } from '../types';
 
@@ -37,6 +38,8 @@ export interface Settings {
   invertY: boolean;
   /** Let the stage agent pick up the free puppet for a rally when only one hand plays. */
   agentPartner: boolean;
+  /** How forgiving a paddle contact is and how much a return is nudged toward the table. */
+  rallyAssist: RallyAssistMode;
   fingerMap: FingerMap;
 }
 
@@ -73,6 +76,7 @@ export const DEFAULT_SETTINGS: Settings = {
   swapHands: false,
   invertY: false,
   agentPartner: true,
+  rallyAssist: DEFAULT_RALLY_ASSIST,
   fingerMap: DEFAULT_FINGER_MAP,
 };
 
@@ -126,6 +130,7 @@ export function loadSettings(): Settings {
       swapHands: flag('swapHands'),
       invertY: flag('invertY'),
       agentPartner: flag('agentPartner'),
+      rallyAssist: RALLY_ASSIST_MODES.includes(saved.rallyAssist as RallyAssistMode) ? (saved.rallyAssist as RallyAssistMode) : d.rallyAssist,
       fingerMap: parseFingerMap(saved.fingerMap),
     };
   } catch {

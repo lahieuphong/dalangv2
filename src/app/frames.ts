@@ -29,6 +29,8 @@ export interface StageFrame {
   agentSide: Side | null;
   scene: SceneController;
   reducedMotion: boolean;
+  /** `?debug=1`: also draw the ball game's contact zones, predictions and last contact. */
+  debug: boolean;
 }
 
 /** Everything the camera overlay needs to draw one frame. */

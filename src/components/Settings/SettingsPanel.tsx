@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { DEFAULT_SETTINGS, type Settings } from '../../app/settings';
 import type { CameraController } from '../../hooks/useCamera';
 import { CHANNEL_LABEL, gainFromSetting } from '../../motion/PuppetMapping';
+import type { RallyAssistMode } from '../../scene/RallyAssist';
 import { FINGER_NAMES, JOINT_CHANNELS, type FingerMap, type FingerName, type JointChannel, type QualityPreset } from '../../types';
 import { CloseIcon } from '../Header/icons';
 
@@ -74,6 +75,12 @@ const QUALITY_HINT: Record<QualityPreset, string> = {
   performance: 'Fewest pixels and no secondary effects. Tracking and every control stay exactly the same.',
   balanced: 'Soft hand shadows, translucent leather and a little dust in the lamp light.',
   quality: 'Full-resolution canvases and a cast shadow behind each puppet.',
+};
+const ASSIST_LABEL: Record<RallyAssistMode, string> = { natural: 'Natural', cinematic: 'Cinematic', precision: 'Precision' };
+const ASSIST_HINT: Record<RallyAssistMode, string> = {
+  natural: 'A ball that passes just clear of the paddle still counts, and a return is nudged a little toward the table. The stroke stays yours.',
+  cinematic: 'A wider margin and a firmer nudge, for long rallies that are good to watch. The stage partner plays steadier too.',
+  precision: 'The ball must really touch the paddle and goes exactly where the stroke sends it. Nothing is assisted.',
 };
 const FINGER_LABEL: Record<FingerName, string> = { thumb: 'Thumb', index: 'Index', middle: 'Middle', ring: 'Ring', pinky: 'Pinky' };
 
@@ -224,6 +231,17 @@ export function SettingsPanel(props: SettingsPanelProps) {
           <Toggle label="Swap puppet assignment" hint="The hand on the left takes the right puppet" checked={settings.swapHands} onChange={(swapHands) => onChange({ swapHands })} />
           <Toggle label="Invert vertical control" hint="Lowering the hand lifts the puppet" checked={settings.invertY} onChange={(invertY) => onChange({ invertY })} />
           <Toggle label="Stage partner" hint="With one hand, the flies play the other puppet in a rally" checked={settings.agentPartner} onChange={(agentPartner) => onChange({ agentPartner })} />
+          <div className="settings__field">
+            <span>Rally assistance</span>
+            <div className="segmented" role="group" aria-label="Rally assistance">
+              {(Object.keys(ASSIST_LABEL) as RallyAssistMode[]).map((rallyAssist) => (
+                <button type="button" key={rallyAssist} aria-pressed={settings.rallyAssist === rallyAssist} onClick={() => onChange({ rallyAssist })}>
+                  {ASSIST_LABEL[rallyAssist]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="settings__note">{ASSIST_HINT[settings.rallyAssist]}</p>
           <details className="settings__more">
             <summary>Finger mapping</summary>
             {JOINT_CHANNELS.map((channel) => (

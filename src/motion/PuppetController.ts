@@ -245,6 +245,24 @@ export class PuppetController {
     return pickedUp;
   }
 
+  /**
+   * A stroke just landed on this puppet's paddle: the head, the cloth and the
+   * free hand take a little of the recoil. Like the rest of the follow-through
+   * it is layered on top and dies away by itself. The paddle arm, which the
+   * hand (or the agent) controls, is not touched, so the paddle stays exactly
+   * where it was put.
+   *
+   * @param power 0..1: how hard the stroke was
+   */
+  recoil(power: number) {
+    const kick = 0.35 + 0.65 * clamp(power, 0, 1);
+    const velocity = this.secondaryVelocity;
+    velocity.nod += 85 * kick;
+    velocity.cloth += 90 * kick;
+    velocity.fan += 45 * kick;
+    velocity.blade += 90 * kick;
+  }
+
   /** The calibrated but unfiltered features of the latest frame ("raw" in the debug view). */
   get rawFeatures(): HandFeatures {
     return this.filter.raw;

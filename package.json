@@ -14,7 +14,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b",
-    "test": "vitest run"
+    "test": "vitest run",
+    "bench:rally": "vitest run --config vitest.bench.config.ts"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "1.0.1",

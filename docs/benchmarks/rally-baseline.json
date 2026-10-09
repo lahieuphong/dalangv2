@@ -1,0 +1,677 @@
+{
+ "modes": [
+  "baseline"
+ ],
+ "rallySeeds": 6,
+ "rallySeconds": 300,
+ "flyBy": [
+  {
+   "mode": "baseline",
+   "fps": 60,
+   "jitter": false,
+   "trials": 6000,
+   "bands": [
+    {
+     "upTo": 1,
+     "trials": 2326,
+     "hits": 2326
+    },
+    {
+     "upTo": 1.3,
+     "trials": 728,
+     "hits": 652
+    },
+    {
+     "upTo": 1.45,
+     "trials": 340,
+     "hits": 21
+    },
+    {
+     "upTo": 1.8,
+     "trials": 792,
+     "hits": 0
+    },
+    {
+     "upTo": 2.6,
+     "trials": 1814,
+     "hits": 0
+    }
+   ],
+   "fastBands": [
+    {
+     "upTo": 1,
+     "trials": 1173,
+     "hits": 1173
+    },
+    {
+     "upTo": 1.3,
+     "trials": 381,
+     "hits": 352
+    },
+    {
+     "upTo": 1.45,
+     "trials": 167,
+     "hits": 15
+    },
+    {
+     "upTo": 1.8,
+     "trials": 382,
+     "hits": 0
+    },
+    {
+     "upTo": 2.6,
+     "trials": 880,
+     "hits": 0
+    }
+   ],
+   "falsePositives": 0,
+   "furthestHit": 1.4160430363379246
+  },
+  {
+   "mode": "baseline",
+   "fps": 30,
+   "jitter": false,
+   "trials": 6000,
+   "bands": [
+    {
+     "upTo": 1,
+     "trials": 2326,
+     "hits": 2326
+    },
+    {
+     "upTo": 1.3,
+     "trials": 728,
+     "hits": 655
+    },
+    {
+     "upTo": 1.45,
+     "trials": 340,
+     "hits": 50
+    },
+    {
+     "upTo": 1.8,
+     "trials": 792,
+     "hits": 19
+    },
+    {
+     "upTo": 2.6,
+     "trials": 1814,
+     "hits": 0
+    }
+   ],
+   "fastBands": [
+    {
+     "upTo": 1,
+     "trials": 1173,
+     "hits": 1173
+    },
+    {
+     "upTo": 1.3,
+     "trials": 381,
+     "hits": 352
+    },
+    {
+     "upTo": 1.45,
+     "trials": 167,
+     "hits": 31
+    },
+    {
+     "upTo": 1.8,
+     "trials": 382,
+     "hits": 14
+    },
+    {
+     "upTo": 2.6,
+     "trials": 880,
+     "hits": 0
+    }
+   ],
+   "falsePositives": 0,
+   "furthestHit": 1.7148718405980572
+  },
+  {
+   "mode": "baseline",
+   "fps": 120,
+   "jitter": false,
+   "trials": 6000,
+   "bands": [
+    {
+     "upTo": 1,
+     "trials": 2326,
+     "hits": 2326
+    },
+    {
+     "upTo": 1.3,
+     "trials": 728,
+     "hits": 630
+    },
+    {
+     "upTo": 1.45,
+     "trials": 340,
+     "hits": 0
+    },
+    {
+     "upTo": 1.8,
+     "trials": 792,
+     "hits": 0
+    },
+    {
+     "upTo": 2.6,
+     "trials": 1814,
+     "hits": 0
+    }
+   ],
+   "fastBands": [
+    {
+     "upTo": 1,
+     "trials": 1173,
+     "hits": 1173
+    },
+    {
+     "upTo": 1.3,
+     "trials": 381,
+     "hits": 339
+    },
+    {
+     "upTo": 1.45,
+     "trials": 167,
+     "hits": 0
+    },
+    {
+     "upTo": 1.8,
+     "trials": 382,
+     "hits": 0
+    },
+    {
+     "upTo": 2.6,
+     "trials": 880,
+     "hits": 0
+    }
+   ],
+   "falsePositives": 0,
+   "furthestHit": 1.281583080314839
+  },
+  {
+   "mode": "baseline",
+   "fps": 60,
+   "jitter": true,
+   "trials": 6000,
+   "bands": [
+    {
+     "upTo": 1,
+     "trials": 2343,
+     "hits": 2343
+    },
+    {
+     "upTo": 1.3,
+     "trials": 706,
+     "hits": 642
+    },
+    {
+     "upTo": 1.45,
+     "trials": 324,
+     "hits": 33
+    },
+    {
+     "upTo": 1.8,
+     "trials": 828,
+     "hits": 1
+    },
+    {
+     "upTo": 2.6,
+     "trials": 1799,
+     "hits": 0
+    }
+   ],
+   "fastBands": [
+    {
+     "upTo": 1,
+     "trials": 1146,
+     "hits": 1146
+    },
+    {
+     "upTo": 1.3,
+     "trials": 333,
+     "hits": 304
+    },
+    {
+     "upTo": 1.45,
+     "trials": 154,
+     "hits": 22
+    },
+    {
+     "upTo": 1.8,
+     "trials": 402,
+     "hits": 0
+    },
+    {
+     "upTo": 2.6,
+     "trials": 880,
+     "hits": 0
+    }
+   ],
+   "falsePositives": 0,
+   "furthestHit": 1.4961293540429168
+  }
+ ],
+ "drill": [
+  {
+   "mode": "baseline",
+   "skill": "steady",
+   "fps": 60,
+   "serves": 600,
+   "hits": 600,
+   "missWithin": {
+    "tight": 0,
+    "near": 0,
+    "wide": 0
+   },
+   "cleanMisses": 0,
+   "returnsOver": 536,
+   "bands": [
+    {
+     "upTo": 1,
+     "trials": 600,
+     "hits": 600
+    },
+    {
+     "upTo": 1.3,
+     "trials": 0,
+     "hits": 0
+    },
+    {
+     "upTo": 1.6,
+     "trials": 0,
+     "hits": 0
+    },
+    {
+     "upTo": 2,
+     "trials": 0,
+     "hits": 0
+    },
+    {
+     "upTo": 99,
+     "trials": 0,
+     "hits": 0
+    }
+   ]
+  },
+  {
+   "mode": "baseline",
+   "skill": "average",
+   "fps": 60,
+   "serves": 600,
+   "hits": 596,
+   "missWithin": {
+    "tight": 0,
+    "near": 4,
+    "wide": 0
+   },
+   "cleanMisses": 0,
+   "returnsOver": 549,
+   "bands": [
+    {
+     "upTo": 1,
+     "trials": 592,
+     "hits": 592
+    },
+    {
+     "upTo": 1.3,
+     "trials": 4,
+     "hits": 4
+    },
+    {
+     "upTo": 1.6,
+     "trials": 4,
+     "hits": 0
+    },
+    {
+     "upTo": 2,
+     "trials": 0,
+     "hits": 0
+    },
+    {
+     "upTo": 99,
+     "trials": 0,
+     "hits": 0
+    }
+   ]
+  },
+  {
+   "mode": "baseline",
+   "skill": "sloppy",
+   "fps": 60,
+   "serves": 600,
+   "hits": 549,
+   "missWithin": {
+    "tight": 3,
+    "near": 24,
+    "wide": 17
+   },
+   "cleanMisses": 7,
+   "returnsOver": 498,
+   "bands": [
+    {
+     "upTo": 1,
+     "trials": 528,
+     "hits": 528
+    },
+    {
+     "upTo": 1.3,
+     "trials": 24,
+     "hits": 21
+    },
+    {
+     "upTo": 1.6,
+     "trials": 24,
+     "hits": 0
+    },
+    {
+     "upTo": 2,
+     "trials": 17,
+     "hits": 0
+    },
+    {
+     "upTo": 99,
+     "trials": 7,
+     "hits": 0
+    }
+   ]
+  },
+  {
+   "mode": "baseline",
+   "skill": "novice",
+   "fps": 60,
+   "serves": 600,
+   "hits": 511,
+   "missWithin": {
+    "tight": 4,
+    "near": 26,
+    "wide": 31
+   },
+   "cleanMisses": 28,
+   "returnsOver": 450,
+   "bands": [
+    {
+     "upTo": 1,
+     "trials": 480,
+     "hits": 480
+    },
+    {
+     "upTo": 1.3,
+     "trials": 35,
+     "hits": 31
+    },
+    {
+     "upTo": 1.6,
+     "trials": 26,
+     "hits": 0
+    },
+    {
+     "upTo": 2,
+     "trials": 31,
+     "hits": 0
+    },
+    {
+     "upTo": 99,
+     "trials": 28,
+     "hits": 0
+    }
+   ]
+  }
+ ],
+ "rally": {
+  "baseline · steady · 60 fps": {
+   "mode": "baseline",
+   "skill": "steady",
+   "seed": -1,
+   "fps": 60,
+   "jitter": false,
+   "cameraHz": 30,
+   "rallies": 415,
+   "averageHits": 1.9421686746987952,
+   "longestRally": 8,
+   "playerAttempts": 460,
+   "playerHits": 454,
+   "playerNearMisses": 0,
+   "serveAttempts": 416,
+   "serveHits": 416,
+   "serveNearMisses": 0,
+   "cpuAttempts": 354,
+   "cpuHits": 354,
+   "doubleHits": 0,
+   "playerReturnsOver": 353,
+   "endings": {
+    "playerMiss": 6,
+    "playerFault": 100,
+    "cpuMiss": 0,
+    "cpuFault": 309
+   },
+   "updateMicros": 2.032453703704425
+  },
+  "baseline · average · 60 fps": {
+   "mode": "baseline",
+   "skill": "average",
+   "seed": -1,
+   "fps": 60,
+   "jitter": false,
+   "cameraHz": 30,
+   "rallies": 390,
+   "averageHits": 2.2512820512820513,
+   "longestRally": 8,
+   "playerAttempts": 492,
+   "playerHits": 478,
+   "playerNearMisses": 7,
+   "serveAttempts": 387,
+   "serveHits": 386,
+   "serveNearMisses": 0,
+   "cpuAttempts": 367,
+   "cpuHits": 361,
+   "doubleHits": 0,
+   "playerReturnsOver": 365,
+   "endings": {
+    "playerMiss": 14,
+    "playerFault": 79,
+    "cpuMiss": 6,
+    "cpuFault": 291
+   },
+   "updateMicros": 2.132322222223349
+  },
+  "baseline · sloppy · 60 fps": {
+   "mode": "baseline",
+   "skill": "sloppy",
+   "seed": -1,
+   "fps": 60,
+   "jitter": false,
+   "cameraHz": 30,
+   "rallies": 383,
+   "averageHits": 2.088772845953003,
+   "longestRally": 7,
+   "playerAttempts": 494,
+   "playerHits": 435,
+   "playerNearMisses": 21,
+   "serveAttempts": 385,
+   "serveHits": 356,
+   "serveNearMisses": 12,
+   "cpuAttempts": 318,
+   "cpuHits": 315,
+   "doubleHits": 0,
+   "playerReturnsOver": 318,
+   "endings": {
+    "playerMiss": 59,
+    "playerFault": 69,
+    "cpuMiss": 3,
+    "cpuFault": 252
+   },
+   "updateMicros": 2.259449999997902
+  },
+  "baseline · novice · 60 fps": {
+   "mode": "baseline",
+   "skill": "novice",
+   "seed": -1,
+   "fps": 60,
+   "jitter": false,
+   "cameraHz": 30,
+   "rallies": 388,
+   "averageHits": 1.7036082474226804,
+   "longestRally": 6,
+   "playerAttempts": 476,
+   "playerHits": 373,
+   "playerNearMisses": 37,
+   "serveAttempts": 390,
+   "serveHits": 321,
+   "serveNearMisses": 30,
+   "cpuAttempts": 273,
+   "cpuHits": 270,
+   "doubleHits": 0,
+   "playerReturnsOver": 274,
+   "endings": {
+    "playerMiss": 103,
+    "playerFault": 74,
+    "cpuMiss": 3,
+    "cpuFault": 208
+   },
+   "updateMicros": 2.123611111108571
+  },
+  "baseline · absent · 60 fps": {
+   "mode": "baseline",
+   "skill": "absent",
+   "seed": -1,
+   "fps": 60,
+   "jitter": false,
+   "cameraHz": 30,
+   "rallies": 426,
+   "averageHits": 0,
+   "longestRally": 0,
+   "playerAttempts": 426,
+   "playerHits": 0,
+   "playerNearMisses": 0,
+   "serveAttempts": 426,
+   "serveHits": 0,
+   "serveNearMisses": 0,
+   "cpuAttempts": 0,
+   "cpuHits": 0,
+   "doubleHits": 0,
+   "playerReturnsOver": 0,
+   "endings": {
+    "playerMiss": 426,
+    "playerFault": 0,
+    "cpuMiss": 0,
+    "cpuFault": 0
+   },
+   "updateMicros": 2.229414814814542
+  },
+  "baseline · average · 30 fps": {
+   "mode": "baseline",
+   "skill": "average",
+   "seed": -1,
+   "fps": 30,
+   "jitter": false,
+   "cameraHz": 30,
+   "rallies": 384,
+   "averageHits": 2.9817708333333335,
+   "longestRally": 9,
+   "playerAttempts": 497,
+   "playerHits": 479,
+   "playerNearMisses": 7,
+   "serveAttempts": 54,
+   "serveHits": 54,
+   "serveNearMisses": 0,
+   "cpuAttempts": 311,
+   "cpuHits": 306,
+   "doubleHits": 0,
+   "playerReturnsOver": 307,
+   "endings": {
+    "playerMiss": 18,
+    "playerFault": 135,
+    "cpuMiss": 5,
+    "cpuFault": 226
+   },
+   "updateMicros": 2.3628833333362613
+  },
+  "baseline · average · 120 fps": {
+   "mode": "baseline",
+   "skill": "average",
+   "seed": -1,
+   "fps": 120,
+   "jitter": false,
+   "cameraHz": 30,
+   "rallies": 396,
+   "averageHits": 2.090909090909091,
+   "longestRally": 8,
+   "playerAttempts": 466,
+   "playerHits": 456,
+   "playerNearMisses": 5,
+   "serveAttempts": 398,
+   "serveHits": 394,
+   "serveNearMisses": 2,
+   "cpuAttempts": 350,
+   "cpuHits": 344,
+   "doubleHits": 0,
+   "playerReturnsOver": 350,
+   "endings": {
+    "playerMiss": 10,
+    "playerFault": 80,
+    "cpuMiss": 6,
+    "cpuFault": 300
+   },
+   "updateMicros": 1.8198494486285022
+  },
+  "baseline · average · 60 fps ±35%": {
+   "mode": "baseline",
+   "skill": "average",
+   "seed": -1,
+   "fps": 60,
+   "jitter": true,
+   "cameraHz": 30,
+   "rallies": 394,
+   "averageHits": 2.1446700507614214,
+   "longestRally": 9,
+   "playerAttempts": 480,
+   "playerHits": 468,
+   "playerNearMisses": 7,
+   "serveAttempts": 392,
+   "serveHits": 388,
+   "serveNearMisses": 3,
+   "cpuAttempts": 339,
+   "cpuHits": 338,
+   "doubleHits": 0,
+   "playerReturnsOver": 340,
+   "endings": {
+    "playerMiss": 12,
+    "playerFault": 96,
+    "cpuMiss": 1,
+    "cpuFault": 285
+   },
+   "updateMicros": 2.320160898542181
+  },
+  "baseline · average · 60 fps, 15 Hz camera": {
+   "mode": "baseline",
+   "skill": "average",
+   "seed": -1,
+   "fps": 60,
+   "jitter": false,
+   "cameraHz": 15,
+   "rallies": 396,
+   "averageHits": 2.1616161616161618,
+   "longestRally": 7,
+   "playerAttempts": 489,
+   "playerHits": 474,
+   "playerNearMisses": 2,
+   "serveAttempts": 395,
+   "serveHits": 394,
+   "serveNearMisses": 0,
+   "cpuAttempts": 349,
+   "cpuHits": 346,
+   "doubleHits": 0,
+   "playerReturnsOver": 349,
+   "endings": {
+    "playerMiss": 15,
+    "playerFault": 96,
+    "cpuMiss": 3,
+    "cpuFault": 282
+   },
+   "updateMicros": 2.073698148151666
+  }
+ }
+}

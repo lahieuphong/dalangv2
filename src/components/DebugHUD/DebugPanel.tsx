@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Engine } from '../../app/Engine';
 import { fixed, type Telemetry } from '../../app/telemetry';
 import { CHANNEL_LABEL, JOINT_RANGE } from '../../motion/PuppetMapping';
+import { PHYSICS_STEP } from '../../scene/BallPhysics';
 import { FINGER_NAMES, SIDES, type FingerName, type Side } from '../../types';
 import { fitCanvas } from '../../utils/canvas';
 import { clamp } from '../../utils/math';
@@ -38,9 +39,25 @@ function describe(t: Telemetry): string {
   lines.push(
     `mapping      ${fixed(t.mappingMs, 2)} ms per result (features + filters + pose)`,
     `render       ${fixed(t.renderFps, 1)} fps · frame ${fixed(t.frameMs, 1)} ms · worst ${fixed(t.worstFrameMs)} ms · engine ${fixed(t.engineMs, 2)} ms`,
+    `physics      scene ${fixed(t.sceneMs, 3)} ms per frame · fixed steps of ${fixed(PHYSICS_STEP * 1000, 2)} ms`,
+    `collider     the paddle as rendered this frame, swept`,
     `response     ${t.source === 'camera' ? `${fixed(t.responseMs)} ms capture→pose on screen` : 'n/a without a camera'}`,
     `assignment   ${t.assignment} · mode ${t.mode} · returns ${t.returns} · best rally ${t.bestRally}`,
     `tuning       finger ${fixed(t.fingerGain, 2)}× · palm ${fixed(t.palmGain, 2)}× · pinch ${fixed(t.pinchGain, 2)}× · smoothing ${fixed(t.smoothing, 2)}`,
+  );
+  const r = t.rally;
+  const contacts = r.coreContacts + r.assistedContacts;
+  const last = t.lastContact;
+  lines.push(
+    '',
+    `RALLY · assistance ${t.rallyAssist}`,
+    `  now        ${t.mode === 'rally' ? `${t.returns} consecutive hits · ${fixed(t.rallySeconds, 1)} s` : 'no rally'}`,
+    `  rallies    ${r.rallies} · longest ${r.longest} · mean length ${r.rallies ? fixed(r.averageLength, 2) : '–'}`,
+    `  contacts   ${contacts} · core ${r.coreContacts} · assisted ${r.assistedContacts} · mean quality ${contacts ? fixed(r.averageQuality, 2) : '–'}`,
+    `  attempts   ${r.attempts} · missed ${r.misses} · repeats refused ${r.blockedDoubleHits}`,
+    `  ball       ${contacts > 1 ? `${fixed(r.travelMs)} ms since the contact before · mean ${fixed(r.averageTravelMs)}` : '–'}`,
+    `  last hit   ${last ? `${last.side} ${last.human ? 'player' : 'CPU'} · ${last.kind} · quality ${fixed(last.quality, 2)}` : '–'}`,
+    `  assist     ${last ? `aim ${fixed(last.weight, 2)} · pace ${fixed(last.pace, 2)} · power ${fixed(last.power, 2)} · ${fixed(last.speed)} u/s` : '–'}`,
   );
   for (const side of SIDES) {
     const h = t.hands[side];
