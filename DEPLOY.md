@@ -160,6 +160,5 @@ server {
 ```
 
 Ảnh chia sẻ khi dán link (Facebook, Zalo…) là `og-image.jpg`, đã trỏ sẵn tới
-`https://dalangv2.hongvan.net/og-image.jpg`. Địa chỉ site được ghi cứng ở ba
-nơi, cần sửa cả ba nếu đổi tên miền: thẻ `canonical` và `og:` trong
-`index.html`, và `homepage` trong `package.json`.
+`https://dalangv2.hongvan.net/og-image.jpg`. Địa chỉ site được ghi cứng trong
+`index.html` (thẻ `canonical` và các thẻ `og:`), cần sửa ở đó nếu đổi tên miền.
