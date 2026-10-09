@@ -5,16 +5,31 @@ database trên server. `dalangv2.hongvan.net` nằm chung server **IIS (Windows)
 với `dalang.hongvan.net` (V1), nhưng là **một site riêng với thư mục gốc
 riêng**. Không upload V2 vào thư mục của V1.
 
-## 1. Lần đầu: tạo site trên hosting
+## 1. Lần đầu: khai báo tên miền ở hai nơi
 
-Chỉ làm một lần, trước khi upload.
+Chỉ làm một lần, trước khi upload. Server IIS đứng sau một reverse proxy định
+tuyến theo tên miền, nên tên miền mới phải được khai báo ở cả proxy lẫn IIS.
 
-1. Trong trang quản trị hosting, tạo site (hoặc subdomain)
-   `dalangv2.hongvan.net` với thư mục gốc riêng.
-2. Bật HTTPS cho site. Camera chỉ hoạt động trên HTTPS.
-3. Bật chuyển hướng HTTP → HTTPS giống như site V1. `web.config` trong bản
-   build cố ý không tự chuyển hướng, vì việc đó cần module URL Rewrite và sẽ
-   gây lỗi 500 nếu server không cài.
+> DNS và chứng chỉ HTTPS đều là wildcard (`*.hongvan.net`). Vì vậy ping được
+> và ổ khóa HTTPS hợp lệ **không** có nghĩa là site đã được khai báo: mọi tên
+> miền con, kể cả tên gõ bừa, đều ping được.
+
+1. **Ở reverse proxy:** thêm rule cho `dalangv2.hongvan.net`, trỏ về cùng
+   server IIS như rule của `dalang.hongvan.net`, kèm chuyển hướng HTTP →
+   HTTPS giống V1 (camera chỉ hoạt động trên HTTPS).
+2. **Ở IIS:** tạo site `dalangv2.hongvan.net` với thư mục gốc riêng và binding
+   có host name `dalangv2.hongvan.net`, cùng kiểu binding (cổng, giao thức)
+   với site V1.
+
+`web.config` trong bản build cố ý không tự chuyển hướng HTTPS, vì việc đó cần
+module URL Rewrite và sẽ gây lỗi 500 nếu server không cài.
+
+Cách phân biệt lỗi 404 đến từ đâu:
+
+| Trang 404 trông thế nào | Ai trả về | Việc cần làm |
+| --- | --- | --- |
+| `404 Not Found` + `The resource could not be found.`, không có header `Server` | Reverse proxy: chưa có rule cho tên miền | Bước 1 ở trên |
+| Trang lỗi của IIS, có header `Server: Microsoft-IIS/10.0` | IIS: site có rồi nhưng thiếu file | Upload lại theo mục 3 |
 
 ## 2. Build và đóng gói
 
